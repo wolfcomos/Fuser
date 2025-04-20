@@ -138,7 +138,7 @@ void validateIterDomainUsage(Fusion* fusion) {
   FUSER_PERF_SCOPE("GpuLower::Lower::validateIterDomainUse");
   FusionGuard fg(fusion);
 
-  auto used_vals = fusion->usedMathVals();
+  auto used_vals = fusion->producedMathVals();
   std::unordered_map<IterDomain*, TensorView*> domain_use_map;
 
   for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
@@ -731,7 +731,7 @@ void validateAndCollectVectorizeInfo(Fusion* fusion) {
   FUSER_PERF_SCOPE("GpuLower::Lower::validateVectorize");
   FusionGuard fg(fusion);
 
-  std::vector<Val*> used_vals = fusion->usedMathVals();
+  std::vector<Val*> used_vals = fusion->producedMathVals();
   for (auto* tv : ir_utils::filterByType<TensorView>(used_vals)) {
     bool has_vectorize_dim = false;
 
@@ -1048,7 +1048,7 @@ void validateLoopSwizzle(
 } // namespace
 
 void validateSwizzle(Fusion* fusion) {
-  auto used_vals = fusion->usedMathVals();
+  auto used_vals = fusion->producedMathVals();
   for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
     if (tv->hasSwizzleOp()) {
       std::unordered_set<IterDomain*> tv_loop_domain_set(

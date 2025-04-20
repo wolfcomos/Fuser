@@ -213,7 +213,7 @@ class NVF_API Fusion : public IrContainer {
 
   //! Return a list of topologically sorted expressions. This only includes
   //! exprs required to generate registered outputs.
-  std::vector<Expr*> exprs() const;
+  std::vector<Expr*> usedExprs() const;
 
   //! Return a vector of fusion inputs that feed this Val
   std::vector<Val*> inputsOf(Val* val);
@@ -224,7 +224,7 @@ class NVF_API Fusion : public IrContainer {
   //! outputs, however, when a multi-output expression exists, and only
   //! some of the outputs are used, the remaining unused outputs are
   //! also included as they must show up in the final code.
-  std::vector<Val*> usedMathVals();
+  std::vector<Val*> producedMathVals();
 
   //! Returns all vals that are produced by used math expressions and
   //!  also do not have further consumers.

@@ -2872,7 +2872,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAtTransposed1_CUDA) {
     NVF_CHECK(tv->nDims() == 3 && tv->getComputeAtPosition() == 1);
   }
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -2941,7 +2941,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAtTransposed2_CUDA) {
 
   tv0->computeAt(tv6, 1);
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -3004,7 +3004,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAtTransposed3_CUDA) {
 
   tv3->axis(0)->parallelize(ParallelType::BIDx);
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -3078,7 +3078,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAtTransposed4_CUDA) {
 
   tv6->axis(0)->parallelize(ParallelType::BIDx);
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -4544,7 +4544,7 @@ TEST_F(NVFuserTest, FusionIssue728_CUDA) {
         tv->name(),
         " not found");
   }
-  for (auto tv : ir_utils::filterByType<TensorView>(fusion.vals())) {
+  for (auto tv : ir_utils::filterByType<TensorView>(fusion.unordered_vals())) {
     if (included_tensors.find(tv) == included_tensors.end()) {
       NVF_CHECK(
           std::find(all_vals_under_tv3.begin(), all_vals_under_tv3.end(), tv) ==
@@ -7440,7 +7440,7 @@ TEST_F(NVFuserTest, FusionTestWarpSoftMax_CUDA) {
   scheduler->schedule(&fusion, heuristic_params.get());
 
   // Modify the schedule to use warp reduction
-  auto used_vals = fusion.usedMathVals();
+  auto used_vals = fusion.producedMathVals();
   for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
     for (IterDomain* id : tv->getLoopDomain()) {
       if (id->getParallelType() == ParallelType::TIDx) {

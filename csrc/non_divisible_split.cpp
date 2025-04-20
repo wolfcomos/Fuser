@@ -15,7 +15,7 @@
 namespace nvfuser {
 
 void NonDivisibleSplitInfo::build(Fusion* fusion) {
-  const auto vals = fusion->usedMathVals();
+  const auto vals = fusion->producedMathVals();
   auto tvs = ir_utils::filterByType<TensorView>(vals);
 
   // Find all non-divisible splits

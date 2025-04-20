@@ -53,16 +53,16 @@ IrCloner IrContainer::copy(const IrContainer* from, IrContainer* to) {
   IrCloner ir_cloner(to);
 
   // Copy values in deterministic order
-  // deterministic_vals can contain special values like one_val_, zero_val_, etc
+  // deterministicVals can contain special values like one_val_, zero_val_, etc
   // that are not registered in the container.
-  for (auto val : from->deterministic_vals()) {
-    if (from->vals().count(val) > 0) {
+  for (auto val : from->deterministicVals()) {
+    if (from->unordered_vals().count(val) > 0) {
       to->vals_.insert(ir_cloner.clone(val));
     }
   }
 
   // Copy expressions in deterministic order
-  for (auto expr : from->deterministic_exprs()) {
+  for (auto expr : from->deterministicExprs()) {
     if (from->unordered_exprs().count(expr) > 0) {
       to->exprs_.insert(ir_cloner.clone(expr));
     }
@@ -389,6 +389,10 @@ void IrContainer::removeStatementsCreatedAfter(
     vals_.erase(vals_up_.back().get());
     vals_up_.pop_back();
   }
+}
+
+std::vector<Val*> IrContainer::inputsOf(Val* val) {
+  return InputsOf::output(val);
 }
 
 } // namespace nvfuser

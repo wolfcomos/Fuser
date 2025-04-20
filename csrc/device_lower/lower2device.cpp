@@ -150,7 +150,7 @@ void GpuLower::collectPaddedParallelDims() {
 
   auto warp_size = at::cuda::warp_size();
 
-  auto used_vals = fusion_->usedMathVals();
+  auto used_vals = fusion_->producedMathVals();
   for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
     for (auto id : tv->getLoopDomain()) {
       if (tv->definition()) {
@@ -654,7 +654,7 @@ bool GpuLower::resolveComputeWith(Fusion* fusion) {
   std::vector<Expr*> exprs_sorted;
 
   bool updated = false;
-  for (auto val : fusion->usedMathVals()) {
+  for (auto val : fusion->producedMathVals()) {
     auto tv = dynamic_cast<TensorView*>(val);
     if (tv == nullptr) {
       continue;

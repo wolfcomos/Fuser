@@ -106,7 +106,7 @@ TEST_F(NVFuserTest, FusionIrGraphGenerator_CUDA) {
                  &fusion, IrGraphGenerator::DetailLevel::ComputeOnly)
                  .empty());
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -168,7 +168,7 @@ TEST_F(NVFuserTest, FusionClear_CUDA) {
   fusion.clear();
 
   NVF_CHECK(fusion.unordered_exprs().empty());
-  NVF_CHECK(fusion.vals().empty());
+  NVF_CHECK(fusion.unordered_vals().empty());
 
   NVF_CHECK(fusion.inputs().empty());
   NVF_CHECK(fusion.outputs().empty());
@@ -336,7 +336,7 @@ TEST_F(NVFuserTest, FusionMove_CUDA) {
   //    https://en.cppreference.com/w/cpp/utility/move
   //
   NVF_CHECK(fusion.unordered_exprs().empty());
-  NVF_CHECK(fusion.vals().empty());
+  NVF_CHECK(fusion.unordered_vals().empty());
   NVF_CHECK(fusion.inputs().empty());
   NVF_CHECK(fusion.outputs().empty());
 
@@ -1128,7 +1128,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAt1_CUDA) {
         ca_map.areMapped(tv7->axis(0), tv->axis(0), IdMappingMode::PERMISSIVE));
   }
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -1185,7 +1185,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAt2_CUDA) {
 
   tv0->computeAt(tv6, 1);
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -1234,7 +1234,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAt3_CUDA) {
 
   tv3->axis(0)->parallelize(ParallelType::BIDx);
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -1296,7 +1296,7 @@ TEST_F(NVFuserTest, FusionAdvancedComputeAt4_CUDA) {
 
   tv6->axis(0)->parallelize(ParallelType::BIDx);
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -1679,7 +1679,7 @@ TEST_F(NVFuserTest, FusionComputeAtCommonConsumer2_CUDA) {
   tv1->computeAt(computeAtTarget, 1);
 
   // All tensors should have the same dimenionality as the target
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (val->isFusionInput() ||
         val->getValType().value() != ValType::TensorView) {
       continue;
@@ -1693,7 +1693,7 @@ TEST_F(NVFuserTest, FusionComputeAtCommonConsumer2_CUDA) {
     }
   }
 
-  for (auto tv : ir_utils::filterByType<TensorView>(fusion.vals())) {
+  for (auto tv : ir_utils::filterByType<TensorView>(fusion.unordered_vals())) {
     if (!tv->isFusionInput()) {
       tv->axis(1)->parallelize(ParallelType::Unroll);
       tv->axis(-1)->parallelize(ParallelType::TIDx);
@@ -1758,7 +1758,7 @@ TEST_F(NVFuserTest, FusionComputeAtCommonConsumer3_CUDA) {
   tv1->computeAt(computeAtTarget, 1);
 
   // All tensors should have the same dimenionality as the target
-  for (auto tv : ir_utils::filterByType<TensorView>(fusion.vals())) {
+  for (auto tv : ir_utils::filterByType<TensorView>(fusion.unordered_vals())) {
     if (tv->isFusionInput()) {
       continue;
     }
@@ -1771,7 +1771,7 @@ TEST_F(NVFuserTest, FusionComputeAtCommonConsumer3_CUDA) {
     }
   }
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = val->as<TensorView>();
@@ -1921,7 +1921,7 @@ TEST_F(NVFuserTest, FusionScalarInputs_CUDA) {
 
   tv4->axis(0)->parallelize(ParallelType::BIDx);
 
-  for (Val* val : fusion.vals()) {
+  for (Val* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       TensorView* tv = static_cast<TensorView*>(val);
@@ -3053,7 +3053,7 @@ TEST_F(NVFuserTest, FusionReduction5_CUDA) {
   tv0->computeAt(tv1, 1);
   tv1->axis(0)->parallelize(ParallelType::BIDy);
 
-  for (auto* val : fusion.vals()) {
+  for (auto* val : fusion.unordered_vals()) {
     if (!val->isFusionInput() &&
         val->getValType().value() == ValType::TensorView) {
       val->as<TensorView>()->axis(-1)->parallelize(ParallelType::TIDx);

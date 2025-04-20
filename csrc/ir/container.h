@@ -52,7 +52,7 @@ class IrContainer : public PolymorphicBase {
   }
 
   //! Return values in insertion order
-  const std::deque<Val*> deterministic_vals() const noexcept {
+  const std::deque<Val*> deterministicVals() const noexcept {
     std::deque<Val*> vals_deque;
     std::transform(
         vals_up_.begin(),
@@ -63,7 +63,7 @@ class IrContainer : public PolymorphicBase {
   }
 
   //! Return expression in insertion order
-  const std::deque<Expr*> deterministic_exprs() const noexcept {
+  const std::deque<Expr*> deterministicExprs() const noexcept {
     std::deque<Expr*> exprs_deque;
     std::transform(
         exprs_up_.begin(),
@@ -74,7 +74,7 @@ class IrContainer : public PolymorphicBase {
   }
 
   //! Return mapping from value to integer id
-  const std::unordered_map<Val*, int64_t> deterministic_vals_map()
+  const std::unordered_map<Val*, int64_t> deterministicValsMap()
       const noexcept {
     std::unordered_map<Val*, int64_t> vals_map;
     int64_t count = 0;
@@ -89,7 +89,7 @@ class IrContainer : public PolymorphicBase {
   }
 
   //! Return mapping from expression to integer id
-  const std::unordered_map<Expr*, int64_t> deterministic_exprs_map()
+  const std::unordered_map<Expr*, int64_t> deterministicExprsMap()
       const noexcept {
     std::unordered_map<Expr*, int64_t> exprs_map;
     int64_t count = 0;
@@ -120,7 +120,7 @@ class IrContainer : public PolymorphicBase {
   }
 
   //! Return the set of Vals registered with this fusion
-  const std::unordered_set<Val*>& vals() const noexcept {
+  const std::unordered_set<Val*>& unordered_vals() const noexcept {
     return vals_;
   }
 
@@ -151,6 +151,8 @@ class IrContainer : public PolymorphicBase {
 
   void assumePositive(Val* val);
   void assumeNonNegative(Val* val);
+
+  std::vector<Val*> inputsOf(Val* val);
 
  protected:
   static IrCloner copy(const IrContainer* from, IrContainer* to);

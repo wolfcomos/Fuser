@@ -474,7 +474,7 @@ SegmentedFusion::SegmentedFusion(std::unique_ptr<Fusion> fusion)
     : segmented_fusion_name_{segmentedFusionName()},
       impl_(this),
       complete_fusion_(std::move(fusion)),
-      initial_vals_size_{complete_fusion_->vals().size()},
+      initial_vals_size_{complete_fusion_->unordered_vals().size()},
       initial_exprs_size_{complete_fusion_->unordered_exprs().size()} {
   annotateFP16IntermediateTensors();
 }
@@ -513,9 +513,9 @@ flatbuffers::Offset<serde::SegmentedFusion> SegmentedFusion::serialize(
     flatbuffers::FlatBufferBuilder& builder) const {
   FUSER_PERF_SCOPE("SegmentedFusion::serialize");
   const std::unordered_map<Val*, int64_t>& vals_to_id_map =
-      completeFusion()->deterministic_vals_map();
+      completeFusion()->deterministicValsMap();
   const std::unordered_map<Expr*, int64_t>& exprs_to_id_map =
-      completeFusion()->deterministic_exprs_map();
+      completeFusion()->deterministicExprsMap();
   const std::unordered_map<SegmentedGroup*, int64_t>& groups_map =
       impl_.groups_map();
   const std::unordered_map<SegmentedEdge*, int64_t>& edges_map =
@@ -585,9 +585,9 @@ void SegmentedFusion::deserialize(const serde::SegmentedFusion* buffer) {
   // the fusion. We relax the constraints here because we already know the
   // proposed scheduler for each segmented group.
   NVF_ERROR(
-      complete_fusion_->vals().size() <= buffer->num_vals(),
+      complete_fusion_->unordered_vals().size() <= buffer->num_vals(),
       "The complete fusion has ",
-      complete_fusion_->vals().size(),
+      complete_fusion_->unordered_vals().size(),
       " values while serialization expected at least",
       buffer->num_vals(),
       " values.");
@@ -598,8 +598,8 @@ void SegmentedFusion::deserialize(const serde::SegmentedFusion* buffer) {
       " expressions while serialization expected at least",
       buffer->num_exprs(),
       " expressions.");
-  const std::deque<Val*>& vals = complete_fusion_->deterministic_vals();
-  const std::deque<Expr*>& exprs = complete_fusion_->deterministic_exprs();
+  const std::deque<Val*>& vals = complete_fusion_->deterministicVals();
+  const std::deque<Expr*>& exprs = complete_fusion_->deterministicExprs();
   segmented_fusion_name_ = buffer->segmented_fusion_name();
 
   // Construct segmented groups first because they are necessary for the
