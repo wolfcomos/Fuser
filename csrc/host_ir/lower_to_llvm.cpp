@@ -871,6 +871,48 @@ void HostIrLlvmJit::compile(TensorView* output_tv) {
       ExitOnErr(pimpl_->jit->lookup("infer_stride")).toPtr<StrideInferFunc>();
 }
 
+void HostIrLlvmJit::setInputTensor(const at::Tensor& input_tensor) {
+  pimpl_->input_tensors.push_back(input_tensor);
+}
+
+void HostIrLlvmJit::inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride) {
+  NVF_ERROR(
+      pimpl_->logical_shape_infer_fn != nullptr && pimpl_->logical_stride_infer_fn != nullptr
+      && pimpl_->output_tv != nullptr,
+      "JIT must be compiled before running.");
+
+  // Allocate memory for shape result
+  std::vector<int64_t> logical_shape_result(pimpl_->output_tv->getLogicalDomain().size());
+  std::vector<int64_t> input_sizes;
+  for(auto& input_tensor : pimpl_->input_tensors){
+    input_sizes.insert(input_sizes.end(), input_tensor.sizes().begin(), input_tensor.sizes().end());
+  }
+
+  // Run output tensor logical shape inference
+  pimpl_->logical_shape_infer_fn(
+      input_sizes.data(),
+      input_sizes.size(),
+      logical_shape_result.data(),
+      logical_shape_result.size());
+
+  // Allocate memory for stride result
+  std::vector<int64_t> logical_shared_stride_result(pimpl_->output_tv->getLogicalDomain().size());
+  std::vector<int64_t> logical_sharded_shape_result(pimpl_->output_tv->getLogicalDomain().size());
+
+  // Run output tensor logical stride inference
+  pimpl_->logical_stride_infer_fn(
+      logical_shape_result.data(),
+      logical_shape_result.size(),
+      logical_shared_stride_result.data(),
+      logical_shared_stride_result.size(),
+      logical_sharded_shape_result.data(),
+      logical_sharded_shape_result.size());
+
+  // Create the output tensor with the computed shape and strides
+  result_shape = logical_sharded_shape_result;
+  result_stride = logical_shared_stride_result;
+}
+
 at::Tensor HostIrLlvmJit::allocateOutputTensor(const std::vector<at::Tensor>& input_tensors) {
   NVF_ERROR(
       pimpl_->logical_shape_infer_fn != nullptr && pimpl_->logical_stride_infer_fn != nullptr

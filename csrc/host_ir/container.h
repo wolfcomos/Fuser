@@ -10,6 +10,7 @@
 #include <fusion.h>
 #include <host_ir/host_ir.h>
 #include <runtime/executor.h>
+#include <host_ir/lower_to_llvm.h>
 
 namespace nvfuser {
 
@@ -59,12 +60,17 @@ class HostIrContainer final : public Fusion {
 
   Stream* getDefaultStream();
 
+  HostIrLlvmJit* getHostIrLlvmJit() {
+    return host_ir_llvm_jit_.get();
+  }
+
  private:
   std::vector<Expr*> top_level_exprs_;
   // Indexed by group ID. This way, parallel compilation can write to disjoint
   // locations without having to precompute a global index.
   std::vector<std::unique_ptr<KernelExecutor>> kernel_executors_;
   Stream* default_stream_ = nullptr;
+  std::unique_ptr<HostIrLlvmJit> host_ir_llvm_jit_;
 };
 
 } // namespace hir

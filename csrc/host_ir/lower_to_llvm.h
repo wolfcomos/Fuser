@@ -30,11 +30,21 @@ class HostIrLlvmJit {
   void compile(TensorView* output_tv);
 
   // Execute the compiled functions to allocate and return an output tensor.
+  at::Tensor allocateOutputTensor();
+
+  // Allocate an output tensor with the given input tensors
   at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);
+
+  // Infer the shape and stride of the output tensor
+  void inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride);
+
+  // Set the input tensors
+  void setInputTensor(const at::Tensor& input_tensor);
 
  private:
   struct LlvmJitImpl; // The PIMPL forward declaration
   std::unique_ptr<LlvmJitImpl> pimpl_;
+  std::vector<at::Tensor> input_tensors;
 };
 
 } // namespace nvfuser

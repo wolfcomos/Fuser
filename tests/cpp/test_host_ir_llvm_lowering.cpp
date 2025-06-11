@@ -47,6 +47,55 @@ void print_iter_domain(const std::vector<IterDomain*>& iter_domain, const std::s
   std::cout << std::endl;
 }
 
+// Test launch kernel with HostIrLLVMJit against original HostIrEvaluator
+// We want to set a flag to enable/disable the launch kernel with HostIrLLVMJit at dispatch level in LaunchKernel Executor
+TEST_F(HostIrLLVMTest, LaunchKernel) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+  TensorView* in = makeSymbolicTensor(2);
+  fusion.addInput(in);
+
+  TensorView* out = set(in);
+  fusion.addOutput(out);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({32, 32}, options);
+  auto ke = std::make_unique<KernelExecutor>();
+  ke->setGroupId(0);
+  ke->compile(&fusion, {t0});
+
+  auto hic = std::make_unique<HostIrContainer>(1);
+  FusionGuard::setCurFusion(hic.get());
+
+  hic->addKernelExecutor(std::move(ke));
+
+  IrCloner ir_cloner(hic.get());
+  auto hic_in = ir_cloner.clone(in);
+  auto hic_out = ir_cloner.clone(out);
+
+  hic->addInput(hic_in);
+  hic->addOutput(hic_out);
+
+  auto allocate = IrBuilder::create<kir::Allocate>(hic_out, MemoryType::Global);
+  auto* cache_id = IrBuilder::create<NamedScalar>("cacheId", DataType::UInt64);
+  auto launch_kernel = IrBuilder::create<LaunchKernel>(
+      0,
+      LaunchParams(),
+      CompileParams(),
+      std::vector<Val*>{hic_in},
+      std::vector<Val*>{hic_out},
+      cache_id);
+
+  hic->pushBackTopLevelExprs(allocate);
+  hic->pushBackTopLevelExprs(launch_kernel);
+
+  HostIrEvaluator hie(std::move(hic));
+
+  auto outputs = hie.runWithInput({{hic_in, t0}});
+
+  EXPECT_TRUE(outputs[0].as<at::Tensor>().equal(t0));
+}
+
 TEST_F(HostIrLLVMTest, AllocationMergeSplit1) {
   Fusion fusion;
   FusionGuard fg(&fusion);

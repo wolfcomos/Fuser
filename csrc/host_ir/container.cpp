@@ -48,6 +48,12 @@ void HostIrContainer::insertExprAfter(int64_t index, Expr* expr) {
 
 void HostIrContainer::pushBackTopLevelExprs(Expr* expr) {
   assertInContainer(expr, "Cannot add expr, ");
+  if(expr->isA<kir::Allocate>()) {
+    auto tv_out = expr->as<kir::Allocate>()->buffer()->as<TensorView>();
+    auto host_ir_llvm_jit = std::make_unique<HostIrLlvmJit>(4);
+    host_ir_llvm_jit->compile(tv_out);
+    host_ir_llvm_jit_ = std::move(host_ir_llvm_jit);
+  }
   top_level_exprs_.push_back(expr);
 }
 

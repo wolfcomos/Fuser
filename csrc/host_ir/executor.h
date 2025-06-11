@@ -17,7 +17,7 @@
 #include <runtime/executor_abstract.h>
 #include <runtime/executor_params.h>
 #include <runtime/fusion_executor_cache.h>
-
+#include <host_ir/lower_to_llvm.h>
 #include <c10/cuda/CUDAStream.h>
 
 namespace nvfuser {
@@ -85,6 +85,10 @@ class HostIrEvaluator final : public OptOutDispatch {
 
   // Used by FusionExecutor, the main stack.
   KernelArgumentHolder runWithInputs(const KernelArgumentHolder& args);
+
+  // Used by LLVM JIT for shape and stride inference
+  KernelArgumentHolder runWithInputLLVM(
+      const std::unordered_map<Val*, PolymorphicValue>& val_to_PValue);
 
   // Used by MultiDeviceExecutor.
   KernelArgumentHolder runWithInput(

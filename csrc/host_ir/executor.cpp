@@ -33,6 +33,10 @@
 #include <runtime/fusion_kernel_runtime.h>
 #include <tensor_metadata.h>
 
+
+#define USE_LLVM_JIT
+
+
 namespace nvfuser {
 
 HostIrExecutor::HostIrExecutor(
@@ -259,12 +263,14 @@ KernelArgumentHolder HostIrEvaluator::runWithInput(
   // process input values, converting IValue to PolymorphicValue
   for (const auto& [val, pvalue] : val_to_PValue) {
     expr_evaluator_.bind(val, pvalue);
+    #ifdef USE_LLVM_JIT
+    container_->getHostIrLlvmJit()->setInputTensor(pvalue.as<at::Tensor>());
+    #endif
   }
 
   // Interpret each instruction in an "eager" way by iterate over the Host Ir
   // Container's top level expression list
   for (auto expr : container_->topLevelExprs()) {
-    std::cout << expr->toString() << std::endl;
     dispatch(expr);
   }
 
@@ -740,18 +746,27 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
   if (expr_evaluator_.isKnown(tv)) {
     return;
   }
-  GlobalBufferInfo info =
-      getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
   c10::Device device =
-      communicator_ ? communicator_->device() : at::Device("cuda:0");
-  auto tensor = at::native::empty_strided_cuda(
-      info.shape_info.logical_sizes,
-      info.shape_info.logical_strides,
-      info.type,
-      c10::nullopt,
-      device,
-      c10::nullopt);
+        communicator_ ? communicator_->device() : at::Device("cuda:0");
+  #ifdef USE_LLVM_JIT
+  std::vector<int64_t> result_shape;
+  std::vector<int64_t> result_stride;
+  container_->getHostIrLlvmJit()->inferShapeAndStride(result_shape, result_stride);
+  auto dtype = (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
+  auto tensor = at::native::empty_strided_cuda(result_shape, result_stride, data_type_to_aten(dtype), c10::nullopt, device, c10::nullopt);
   expr_evaluator_.bind(tv, tensor);
+  #else
+    GlobalBufferInfo info =
+        getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
+    auto tensor = at::native::empty_strided_cuda(
+        info.shape_info.logical_sizes,
+        info.shape_info.logical_strides,
+        info.type,
+        c10::nullopt,
+        device,
+        c10::nullopt);
+    expr_evaluator_.bind(tv, tensor);
+  #endif
 }
 
 void HostIrEvaluator::handle(HirAliasSelect* hir_alias_select) {
