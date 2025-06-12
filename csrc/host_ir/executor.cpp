@@ -750,11 +750,13 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
   std::vector<int64_t> result_stride;
   
   if (!container_->getHostIrLlvmJit()) {
+    std::cout << "Compiling with LLVM JIT" << std::endl;
     auto host_ir_llvm_jit = std::make_unique<HostIrLlvmJit>(4);
     host_ir_llvm_jit->compile(tv);
     container_->setHostIrLlvmJit(std::move(host_ir_llvm_jit));
   }
 
+  std::cout << "Infer shape and stride with LLVM JIT" << std::endl;
   NVF_ERROR(container_->getHostIrLlvmJit(), "HostIrContainer currenly only supports a single JIT-compiled allocation");
   container_->getHostIrLlvmJit()->inferShapeAndStride(result_shape, result_stride);
 
