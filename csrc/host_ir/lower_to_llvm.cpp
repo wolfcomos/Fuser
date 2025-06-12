@@ -872,7 +872,7 @@ void HostIrLlvmJit::compile(TensorView* output_tv) {
 }
 
 void HostIrLlvmJit::setInputTensor(const at::Tensor& input_tensor) {
-  pimpl_->input_tensors.push_back(input_tensor);
+  HostIrLlvmJit::input_tensors.push_back(input_tensor);
 }
 
 void HostIrLlvmJit::inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride) {
@@ -884,7 +884,7 @@ void HostIrLlvmJit::inferShapeAndStride(std::vector<int64_t>& result_shape, std:
   // Allocate memory for shape result
   std::vector<int64_t> logical_shape_result(pimpl_->output_tv->getLogicalDomain().size());
   std::vector<int64_t> input_sizes;
-  for(auto& input_tensor : pimpl_->input_tensors){
+  for(auto& input_tensor : HostIrLlvmJit::input_tensors){
     input_sizes.insert(input_sizes.end(), input_tensor.sizes().begin(), input_tensor.sizes().end());
   }
 
