@@ -747,26 +747,28 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
     return;
   }
   c10::Device device =
-        communicator_ ? communicator_->device() : at::Device("cuda:0");
-  #ifdef USE_LLVM_JIT
+      communicator_ ? communicator_->device() : at::Device("cuda:0");
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  container_->getHostIrLlvmJit()->inferShapeAndStride(result_shape, result_stride);
-  auto dtype = (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
-  auto tensor = at::native::empty_strided_cuda(result_shape, result_stride, data_type_to_aten(dtype), c10::nullopt, device, c10::nullopt);
-  expr_evaluator_.bind(tv, tensor);
-  #else
+  if (container_->getHostIrLlvmJit()) {
+    container_->getHostIrLlvmJit()->inferShapeAndStride(
+        result_shape, result_stride);
+  } else {
     GlobalBufferInfo info =
         getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
-    auto tensor = at::native::empty_strided_cuda(
-        info.shape_info.logical_sizes,
-        info.shape_info.logical_strides,
-        info.type,
-        c10::nullopt,
-        device,
-        c10::nullopt);
-    expr_evaluator_.bind(tv, tensor);
-  #endif
+    result_shape = info.shape_info.logical_sizes;
+    result_stride = info.shape_info.logical_strides;
+  }
+  auto dtype =
+      (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
+  auto tensor = at::native::empty_strided_cuda(
+      result_shape,
+      result_stride,
+      data_type_to_aten(dtype),
+      c10::nullopt,
+      device,
+      c10::nullopt);
+  expr_evaluator_.bind(tv, tensor);
 }
 
 void HostIrEvaluator::handle(HirAliasSelect* hir_alias_select) {

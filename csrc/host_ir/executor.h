@@ -86,10 +86,6 @@ class HostIrEvaluator final : public OptOutDispatch {
   // Used by FusionExecutor, the main stack.
   KernelArgumentHolder runWithInputs(const KernelArgumentHolder& args);
 
-  // Used by LLVM JIT for shape and stride inference
-  KernelArgumentHolder runWithInputLLVM(
-      const std::unordered_map<Val*, PolymorphicValue>& val_to_PValue);
-
   // Used by MultiDeviceExecutor.
   KernelArgumentHolder runWithInput(
       const std::unordered_map<Val*, PolymorphicValue>& val_to_PValue);
