@@ -36,6 +36,9 @@
 #include <host_ir/lower_to_llvm.h>
 
 namespace nvfuser {
+
+std::vector<at::Tensor> HostIrLlvmJit::input_tensors;
+
 /*
 
 Helper Data Structures & Functions

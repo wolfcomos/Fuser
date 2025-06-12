@@ -29,9 +29,6 @@ class HostIrLlvmJit {
   // Compile a fusion associated with the given output TensorView.
   void compile(TensorView* output_tv);
 
-  // Execute the compiled functions to allocate and return an output tensor.
-  at::Tensor allocateOutputTensor();
-
   // Allocate an output tensor with the given input tensors
   at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);
 
@@ -44,7 +41,7 @@ class HostIrLlvmJit {
  private:
   struct LlvmJitImpl; // The PIMPL forward declaration
   std::unique_ptr<LlvmJitImpl> pimpl_;
-  std::vector<at::Tensor> input_tensors;
+  static std::vector<at::Tensor> input_tensors;
 };
 
 } // namespace nvfuser

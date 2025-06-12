@@ -33,9 +33,7 @@
 #include <runtime/fusion_kernel_runtime.h>
 #include <tensor_metadata.h>
 
-
 #define USE_LLVM_JIT
-
 
 namespace nvfuser {
 
@@ -750,15 +748,22 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       communicator_ ? communicator_->device() : at::Device("cuda:0");
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  if (container_->getHostIrLlvmJit()) {
-    container_->getHostIrLlvmJit()->inferShapeAndStride(
-        result_shape, result_stride);
-  } else {
-    GlobalBufferInfo info =
-        getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
-    result_shape = info.shape_info.logical_sizes;
-    result_stride = info.shape_info.logical_strides;
+  
+  if (!container_->getHostIrLlvmJit()) {
+    auto host_ir_llvm_jit = std::make_unique<HostIrLlvmJit>(4);
+    host_ir_llvm_jit->compile(tv);
+    container_->setHostIrLlvmJit(std::move(host_ir_llvm_jit));
   }
+
+  NVF_ERROR(container_->getHostIrLlvmJit(), "HostIrContainer currenly only supports a single JIT-compiled allocation");
+  container_->getHostIrLlvmJit()->inferShapeAndStride(result_shape, result_stride);
+
+  #ifdef FALLBACK_TO_EXPR_EVAL
+GlobalBufferInfo info =
+        getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
+  result_shape = info.shape_info.logical_sizes;
+  result_stride = info.shape_info.logical_strides;
+#endif
   auto dtype =
       (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
   auto tensor = at::native::empty_strided_cuda(
