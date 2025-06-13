@@ -103,7 +103,7 @@ int mapToInputDomain(std::unordered_map<int, Val*>& boundary_vals, Val* current_
     return input_domain_index;
   }
   for(auto boundary_val : boundary_vals){
-    if(exact_graph.disjointValSets().strictAreMapped(boundary_val.second, current_domain)){
+    if(exact_graph.disjointValSets().strictAreMapped(current_domain, boundary_val.second)){
       return boundary_val.first;
     }
     std::cout << "boundary_val: " << boundary_val.second->toString() << " current_domain: " << current_domain->toString() << " are not in the same valgraph" << std::endl;
@@ -831,7 +831,7 @@ HostIrLlvmJit::HostIrLlvmJit(HostIrLlvmJit&&) noexcept = default;
 HostIrLlvmJit& HostIrLlvmJit::operator=(HostIrLlvmJit&&) noexcept = default;
 
 void HostIrLlvmJit::compile(TensorView* output_tv) {
-  output_tv->printTransforms();
+  // output_tv->printTransforms();
   pimpl_->output_tv = output_tv;
   Fusion* fusion = output_tv->fusion();
   NVF_ERROR(fusion != nullptr, "Output TensorView must belong to a fusion.");

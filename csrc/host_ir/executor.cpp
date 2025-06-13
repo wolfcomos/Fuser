@@ -258,17 +258,30 @@ KernelArgumentHolder HostIrEvaluator::runWithInput(
   expr_evaluator_ = ExpressionEvaluator();
   expr_evaluator_.bind("numberOfStreams", params_.number_of_streams);
   expr_evaluator_.bind("rank", communicator_->deviceId());
+
+  std::vector<IterDomain*> input_domain;
   // process input values, converting IValue to PolymorphicValue
   for (const auto& [val, pvalue] : val_to_PValue) {
     expr_evaluator_.bind(val, pvalue);
     #ifdef USE_LLVM_JIT
+    input_domain = val->as<TensorView>()->getLogicalDomain();
     container_->getHostIrLlvmJit()->setInputTensor(pvalue.as<at::Tensor>());
     #endif
   }
-
   // Interpret each instruction in an "eager" way by iterate over the Host Ir
   // Container's top level expression list
   for (auto expr : container_->topLevelExprs()) {
+    if(expr->isA<kir::Allocate>()){
+      auto id_model = IdModel(expr->as<kir::Allocate>()->buffer()->as<TensorView>()->fusion());
+      auto exact_graph = id_model.buildExactGraph();
+      std::vector<IterDomain*> output_domain = expr->as<kir::Allocate>()->buffer()->as<TensorView>()->getLogicalDomain();
+      for(auto input_domain : input_domain){
+        for(auto output_domain : output_domain){
+          std::cout << "input_domain: " << input_domain->toString() << " output_domain: " << output_domain->toString() << std::endl;
+          std::cout << "strictAreMapped: " << exact_graph.disjointValSets().strictAreMapped(input_domain, output_domain) << std::endl;
+        }
+      }
+    }
     dispatch(expr);
   }
 
@@ -741,6 +754,9 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       "Allocation must be on a TensorView but got ",
       allocate->buffer());
   TensorView* tv = allocate->buffer()->as<TensorView>();
+
+  tv->printTransforms();
+  
   if (expr_evaluator_.isKnown(tv)) {
     return;
   }
