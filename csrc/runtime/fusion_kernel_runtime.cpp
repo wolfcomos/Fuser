@@ -554,9 +554,7 @@ void FusionKernelRuntime::compileFusionParallel(KernelArgumentHolder args) {
     for (const Val* out : segmented_fusion_->outputs()) {
       hic->addOutput(ir_cloner.clone(out));
       std::cout << "Compiling with LLVM JIT" << std::endl;
-      auto jit = std::make_unique<HostIrLlvmJit>(4);
-      jit->compile(out->as<TensorView>());
-      hic->setHostIrLlvmJit(std::move(jit));
+      HostIrLlvmJit::getInstance().compile(out->as<TensorView>());
     }
 
     hir_pass::InsertDeallocations().runPass(hic.get());

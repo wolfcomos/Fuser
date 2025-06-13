@@ -114,15 +114,14 @@ TEST_F(HostIrLLVMTest, AllocationMergeSplit1) {
   // [N, H*W, C]
   tv1->setAllocationDomain(tv1->getLoopDomain(), {true, true, true});
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
 
   // Input Tensor
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({n1, n2, h*w*c}, options);
 
   // LLVM JIT Run Allocation
-  at::Tensor output_tensor = jit.allocateOutputTensor({t0});
+  at::Tensor output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -145,11 +144,10 @@ TEST_F(HostIrLLVMTest, AllocationMergeSplit2) {
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({i1, i2, i3, i4, i5}, options);
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(out);
+  HostIrLlvmJit::getInstance().compile(out);
 
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -174,11 +172,10 @@ TEST_F(HostIrLLVMTest, AllocationStrideInferReorder) {
   at::Tensor t0 = at::randn({i1, i2, i3, i4, i5}, options);
 
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(out);
+  HostIrLlvmJit::getInstance().compile(out);
 
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -217,11 +214,10 @@ TEST_F(HostIrLLVMTest, AllocationStrideInferBroadcast) {
   at::Tensor t0 = at::randn({N, H, W, C}, options);
   at::Tensor t1 = at::randn({N, H, W}, options);
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(tv4);
+  HostIrLlvmJit::getInstance().compile(tv4);
   tv4->setAllocationDomain(tv4->getLoopDomain(), {true, true, true, true});
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0, t1});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0, t1});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -247,10 +243,9 @@ TEST_F(HostIrLLVMTest, AllocationLogicalShapeInfer) {
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({N, H, W, C}, options);
 
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
 }
@@ -273,11 +268,10 @@ TEST_F(HostIrLLVMTest, AllocationDIDInit) {
   fusion->addInput(tv0);
   fusion->addOutput(tv1);
 
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({5, d * 3}, options);
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
   print_tensor_info(output_tensor);
   EXPECT_EQ(output_tensor.sizes(), at::IntArrayRef({5, 3}));
   EXPECT_EQ(output_tensor.strides(), at::IntArrayRef({3, 1}));
@@ -303,11 +297,10 @@ TEST_F(HostIrLLVMTest, AllocationDIDSplit) {
   fusion->addInput(tv0);
   fusion->addOutput(tv1);
 
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({5, d * 3, d}, options);
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
   print_tensor_info(output_tensor);
   EXPECT_EQ(output_tensor.sizes(), at::IntArrayRef({5, 1, d}));
   EXPECT_EQ(output_tensor.strides(), at::IntArrayRef({d, d, 1}));

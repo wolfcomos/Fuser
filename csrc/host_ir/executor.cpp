@@ -236,7 +236,8 @@ KernelArgumentHolder HostIrEvaluator::runWithInputs(
   NVF_ERROR_EQ(std::ssize(container_->inputs()), args.size());
   for (auto&& [in_val, arg] : zip(container_->inputs(), args)) {
     if (in_val->isA<TensorView>()) {
-      container_->getHostIrLlvmJit()->setInputTensor(arg.as<at::Tensor>());
+      std::cout << "HELLO" << std::endl;
+      HostIrLlvmJit::getInstance().setInputTensor(arg.as<at::Tensor>());
     }
     expr_evaluator_.bind(in_val, arg);
   }
@@ -267,7 +268,7 @@ KernelArgumentHolder HostIrEvaluator::runWithInput(
     expr_evaluator_.bind(val, pvalue);
     #ifdef USE_LLVM_JIT
     std::cout << "input tensor" << std::endl;
-    container_->getHostIrLlvmJit()->setInputTensor(pvalue.as<at::Tensor>());
+    HostIrLlvmJit::getInstance().setInputTensor(pvalue.as<at::Tensor>());
     #endif
   }
   // Interpret each instruction in an "eager" way by iterate over the Host Ir
@@ -739,6 +740,7 @@ void HostIrEvaluator::handle(LoadStoreOp* load_store_op) {
   }
 }
 
+
 void HostIrEvaluator::handle(kir::Allocate* allocate) {
   NVF_ERROR(
       allocate->buffer()->isA<TensorView>(),
@@ -753,15 +755,16 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       communicator_ ? communicator_->device() : at::Device("cuda:0");
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  if (container_->getHostIrLlvmJit()) {
-    container_->getHostIrLlvmJit()->inferShapeAndStride(result_shape, result_stride);
-  } else {
+  std::cout << "HELLO" << std::endl;
+  #ifdef USE_LLVM_JIT
+  HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride);
+  #else
     std::cout << "Falling back to ExpressionEvaluator" << std::endl;
     GlobalBufferInfo info =
       getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
       result_shape = info.shape_info.logical_sizes;
       result_stride = info.shape_info.logical_strides;
-  }
+  #endif
   auto dtype =
       (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
   auto tensor = at::native::empty_strided_cuda(

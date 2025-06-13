@@ -16,6 +16,7 @@
 #include <runtime/executor_kernel_arg.h>
 #include <runtime/executor_utils.h>
 #include <tensor_metadata.h>
+#include <host_ir/lower_to_llvm.h>
 
 namespace nvfuser {
 
@@ -652,6 +653,8 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferAllocationShape(
 
 } // namespace
 
+#define USE_LLVM_JIT
+
 std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
     TensorView* tv,
     const ExpressionEvaluator& expr_eval) {
@@ -660,6 +663,13 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
   // need to be allocated while taking expanded broadcasts into
   // account.
 
+  std::vector<int64_t> result_shape;
+  std::vector<int64_t> result_stride;
+  #ifdef USE_LLVM_JIT
+  HostIrLlvmJit::getInstance().compile(tv);
+  HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride);
+  return {result_shape, result_stride};
+  #else
   auto size_stride = inferAllocationShape(tv, expr_eval);
   if (!tv->hasAllocation()) {
     return size_stride;
@@ -673,6 +683,7 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
   // `transformFromAllocationToLogical`
   meta_tensor = transformFromAllocationToLogical(meta_tensor, tv, expr_eval);
   return {meta_tensor.sizes().vec(), meta_tensor.strides().vec()};
+  #endif
 }
 
 TensorShapeInfo inferTensorShapes(

@@ -60,21 +60,12 @@ class HostIrContainer final : public Fusion {
 
   Stream* getDefaultStream();
 
-  HostIrLlvmJit* getHostIrLlvmJit() {
-    return host_ir_llvm_jit_.get();
-  }
-
-  void setHostIrLlvmJit(std::unique_ptr<HostIrLlvmJit> host_ir_llvm_jit) {
-    host_ir_llvm_jit_ = std::move(host_ir_llvm_jit);
-  }
-
  private:
   std::vector<Expr*> top_level_exprs_;
   // Indexed by group ID. This way, parallel compilation can write to disjoint
   // locations without having to precompute a global index.
   std::vector<std::unique_ptr<KernelExecutor>> kernel_executors_;
   Stream* default_stream_ = nullptr;
-  std::unique_ptr<HostIrLlvmJit> host_ir_llvm_jit_;
 };
 
 } // namespace hir

@@ -28,7 +28,7 @@
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/ExecutionEngine/JITLink/JITLink.h>
 #include "llvm/Support/Error.h"
-
+#include <instrumentation.h>
 #include <unordered_map>
 #include <queue>
 #include <chrono>
@@ -36,9 +36,6 @@
 #include <host_ir/lower_to_llvm.h>
 
 namespace nvfuser {
-
-std::vector<at::Tensor> HostIrLlvmJit::input_tensors;
-
 /*
 
 Helper Data Structures & Functions
@@ -825,6 +822,13 @@ HostIrLlvmJit::HostIrLlvmJit(HostIrLlvmJit&&) noexcept = default;
 HostIrLlvmJit& HostIrLlvmJit::operator=(HostIrLlvmJit&&) noexcept = default;
 
 void HostIrLlvmJit::compile(const TensorView* output_tv) {
+  // Check if already compiled
+  if (pimpl_->logical_shape_infer_fn != nullptr && 
+      pimpl_->logical_stride_infer_fn != nullptr && 
+      pimpl_->output_tv == output_tv) {
+    return;  // Already compiled for this output_tv
+  }
+
   // output_tv->printTransforms();
   pimpl_->output_tv = output_tv;
   Fusion* fusion = output_tv->fusion();
@@ -877,7 +881,7 @@ void HostIrLlvmJit::compile(const TensorView* output_tv) {
 }
 
 void HostIrLlvmJit::setInputTensor(const at::Tensor& input_tensor) {
-  HostIrLlvmJit::input_tensors.push_back(input_tensor);
+  input_tensors_.push_back(input_tensor);
 }
 
 void HostIrLlvmJit::inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride) {
@@ -885,11 +889,12 @@ void HostIrLlvmJit::inferShapeAndStride(std::vector<int64_t>& result_shape, std:
       pimpl_->logical_shape_infer_fn != nullptr && pimpl_->logical_stride_infer_fn != nullptr
       && pimpl_->output_tv != nullptr,
       "JIT must be compiled before running.");
+  FUSER_PERF_SCOPE("HostIrLlvmJit::inferShapeAndStride");
 
   // Allocate memory for shape result
   std::vector<int64_t> logical_shape_result(pimpl_->output_tv->getLogicalDomain().size());
   std::vector<int64_t> input_sizes;
-  for(auto& input_tensor : HostIrLlvmJit::input_tensors){
+  for(auto& input_tensor : input_tensors_) {
     input_sizes.insert(input_sizes.end(), input_tensor.sizes().begin(), input_tensor.sizes().end());
   }
 
@@ -927,7 +932,7 @@ at::Tensor HostIrLlvmJit::allocateOutputTensor(const std::vector<at::Tensor>& in
   // Allocate memory for shape result
   std::vector<int64_t> logical_shape_result(pimpl_->output_tv->getLogicalDomain().size());
   std::vector<int64_t> input_sizes;
-  for(auto& input_tensor : input_tensors){
+  for(auto& input_tensor : input_tensors) {
     input_sizes.insert(input_sizes.end(), input_tensor.sizes().begin(), input_tensor.sizes().end());
   }
 
@@ -954,6 +959,11 @@ at::Tensor HostIrLlvmJit::allocateOutputTensor(const std::vector<at::Tensor>& in
   // Create the output tensor with the computed shape and strides
   at::Tensor allocated_tensor = at::empty_strided(logical_sharded_shape_result, logical_stride_result, input_tensors[0].options());
   return allocated_tensor;
+}
+
+HostIrLlvmJit& HostIrLlvmJit::getInstance(int num_threads) {
+    static HostIrLlvmJit instance(num_threads);
+    return instance;
 }
 
 } // namespace nvfuser

@@ -13,16 +13,10 @@ namespace nvfuser {
 
 class HostIrLlvmJit {
  public:
-  // Constructor initializes the JIT
-  explicit HostIrLlvmJit(int num_threads = 0);
-  // Destructor is required for PIMPL with std::unique_ptr
-  ~HostIrLlvmJit();
+  // Get singleton instance
+  static HostIrLlvmJit& getInstance(int num_threads = 4);
 
-  // Enable move semantics
-  HostIrLlvmJit(HostIrLlvmJit&&) noexcept;
-  HostIrLlvmJit& operator=(HostIrLlvmJit&&) noexcept;
-
-  // Disable copy
+  // Delete copy constructor and assignment operator
   HostIrLlvmJit(const HostIrLlvmJit&) = delete;
   HostIrLlvmJit& operator=(const HostIrLlvmJit&) = delete;
 
@@ -39,9 +33,19 @@ class HostIrLlvmJit {
   void setInputTensor(const at::Tensor& input_tensor);
 
  private:
+  // Private constructor
+  explicit HostIrLlvmJit(int num_threads = 4);
+  
+  // Destructor is required for PIMPL with std::unique_ptr
+  ~HostIrLlvmJit();
+
+  // Enable move semantics
+  HostIrLlvmJit(HostIrLlvmJit&&) noexcept;
+  HostIrLlvmJit& operator=(HostIrLlvmJit&&) noexcept;
+
   struct LlvmJitImpl; // The PIMPL forward declaration
   std::unique_ptr<LlvmJitImpl> pimpl_;
-  static std::vector<at::Tensor> input_tensors;
+  std::vector<at::Tensor> input_tensors_; // Changed from static to member variable
 };
 
 } // namespace nvfuser
