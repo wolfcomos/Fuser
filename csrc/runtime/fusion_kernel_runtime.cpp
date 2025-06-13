@@ -496,6 +496,7 @@ void FusionKernelRuntime::compileFusionParallel(KernelArgumentHolder args) {
               auto* allocate =
                   IrBuilder::create<kir::Allocate>(tv, MemoryType::Global);
               hic->pushBackTopLevelExprs(allocate);
+              std::cout << "allocate: " << allocate->toString() << std::endl;
             }
             hic->pushBackTopLevelExprs(expr);
             auto wait = IrBuilder::create<hir::Wait>(expr->as<Communication>());

@@ -271,17 +271,6 @@ KernelArgumentHolder HostIrEvaluator::runWithInput(
   // Interpret each instruction in an "eager" way by iterate over the Host Ir
   // Container's top level expression list
   for (auto expr : container_->topLevelExprs()) {
-    if(expr->isA<kir::Allocate>()){
-      auto id_model = IdModel(expr->as<kir::Allocate>()->buffer()->as<TensorView>()->fusion());
-      auto exact_graph = id_model.buildExactGraph();
-      std::vector<IterDomain*> output_domain = expr->as<kir::Allocate>()->buffer()->as<TensorView>()->getLogicalDomain();
-      for(auto input_domain : input_domain){
-        for(auto output_domain : output_domain){
-          std::cout << "input_domain: " << input_domain->toString() << " output_domain: " << output_domain->toString() << std::endl;
-          std::cout << "strictAreMapped: " << exact_graph.disjointValSets().strictAreMapped(input_domain, output_domain) << std::endl;
-        }
-      }
-    }
     dispatch(expr);
   }
 
