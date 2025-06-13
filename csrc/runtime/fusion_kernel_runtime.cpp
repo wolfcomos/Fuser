@@ -496,8 +496,6 @@ void FusionKernelRuntime::compileFusionParallel(KernelArgumentHolder args) {
               auto* allocate =
                   IrBuilder::create<kir::Allocate>(tv, MemoryType::Global);
               hic->pushBackTopLevelExprs(allocate);
-              std::cout << "allocate: " << allocate->toString() << std::endl;
-              hic->setHostIrLlvmJit(std::make_unique<HostIrLlvmJit>(4));
             }
             hic->pushBackTopLevelExprs(expr);
             auto wait = IrBuilder::create<hir::Wait>(expr->as<Communication>());
@@ -555,6 +553,10 @@ void FusionKernelRuntime::compileFusionParallel(KernelArgumentHolder args) {
     }
     for (const Val* out : segmented_fusion_->outputs()) {
       hic->addOutput(ir_cloner.clone(out));
+      std::cout << "Compiling with LLVM JIT" << std::endl;
+      auto jit = std::make_unique<HostIrLlvmJit>(4);
+      jit->compile(out->as<TensorView>());
+      hic->setHostIrLlvmJit(std::move(jit));
     }
 
     hir_pass::InsertDeallocations().runPass(hic.get());

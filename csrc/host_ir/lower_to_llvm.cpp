@@ -106,7 +106,7 @@ int mapToInputDomain(std::unordered_map<int, Val*>& boundary_vals, Val* current_
     if(exact_graph.disjointValSets().strictAreMapped(current_domain, boundary_val.second)){
       return boundary_val.first;
     }
-    std::cout << "boundary_val: " << boundary_val.second->toString() << " current_domain: " << current_domain->toString() << " are not in the same valgraph" << std::endl;
+    // std::cout << "boundary_val: " << boundary_val.second->toString() << " current_domain: " << current_domain->toString() << " are not in the same valgraph" << std::endl;
   }
   return -1;
 }
@@ -224,10 +224,8 @@ std::unordered_map<ValGroup, llvm::Value*>& val2llvm_val, std::unordered_map<int
   ValGroups tv0_loop_groups = graph.toGroups(input_domain);
   ValGroups tv1_loop_groups = graph.toGroups(output_domain);
   auto result = getAllExprGroupsBetween(graph, tv0_loop_groups, tv1_loop_groups, false).first;
-  std::cout << "result size: " << result.size() << std::endl;
   for(auto expr_group : result){
     for(auto expr : *expr_group.first){
-      std::cout << "expr: " << expr->toString() << std::endl;
       generate_shape_llvm_ir(expr, builder, val2llvm_val, boundary_vals, graph);
     }
   }
@@ -738,7 +736,6 @@ llvm::orc::ThreadSafeModule generate_infer_shape_module(std::vector<IterDomain*>
   // Initialize the input types, linking with llvm inputs
   std::vector<llvm::Type*> input_types;
   for(size_t i = 0; i < input_domain.size(); i++){
-    std::cout << "input_domain[i]: " << input_domain[i]->toString() << std::endl;
     input_types.push_back(builder.getInt64Ty());
   }
 
@@ -779,11 +776,8 @@ llvm::orc::ThreadSafeModule generate_infer_shape_module(std::vector<IterDomain*>
 
   // Map the output values to the input values if they are the same
   for(auto* val : output_values){
-    std::cout << "val: " << val->toString() << std::endl;
     auto index = mapToInputDomain(boundary_vals, val, graph);
-    std::cout << "index: " << index << std::endl;
     if(index != -1){
-      std::cout << "val: " << val->toString() << " boundary_vals[index]: " << boundary_vals[index]->toString() << std::endl;
       val2llvm_val[graph.toGroup(val)] = val2llvm_val[graph.toGroup(boundary_vals[index])];
     }
   }
@@ -812,7 +806,7 @@ struct HostIrLlvmJit::LlvmJitImpl {
   std::unique_ptr<llvm::orc::LLJIT> jit;
   ShapeInferFunc logical_shape_infer_fn = nullptr;
   StrideInferFunc logical_stride_infer_fn = nullptr;
-  TensorView* output_tv = nullptr;
+  const TensorView* output_tv = nullptr;
 };
 
 // Constructor implementation
@@ -830,7 +824,7 @@ HostIrLlvmJit::~HostIrLlvmJit() = default;
 HostIrLlvmJit::HostIrLlvmJit(HostIrLlvmJit&&) noexcept = default;
 HostIrLlvmJit& HostIrLlvmJit::operator=(HostIrLlvmJit&&) noexcept = default;
 
-void HostIrLlvmJit::compile(TensorView* output_tv) {
+void HostIrLlvmJit::compile(const TensorView* output_tv) {
   // output_tv->printTransforms();
   pimpl_->output_tv = output_tv;
   Fusion* fusion = output_tv->fusion();

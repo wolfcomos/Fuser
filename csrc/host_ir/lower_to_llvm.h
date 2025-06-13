@@ -27,7 +27,7 @@ class HostIrLlvmJit {
   HostIrLlvmJit& operator=(const HostIrLlvmJit&) = delete;
 
   // Compile a fusion associated with the given output TensorView.
-  void compile(TensorView* output_tv);
+  void compile(const TensorView* output_tv);
 
   // Allocate an output tensor with the given input tensors
   at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);

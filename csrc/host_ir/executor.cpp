@@ -235,6 +235,9 @@ KernelArgumentHolder HostIrEvaluator::runWithInputs(
 
   NVF_ERROR_EQ(std::ssize(container_->inputs()), args.size());
   for (auto&& [in_val, arg] : zip(container_->inputs(), args)) {
+    if (in_val->isA<TensorView>()) {
+      container_->getHostIrLlvmJit()->setInputTensor(arg.as<at::Tensor>());
+    }
     expr_evaluator_.bind(in_val, arg);
   }
 
@@ -259,12 +262,11 @@ KernelArgumentHolder HostIrEvaluator::runWithInput(
   expr_evaluator_.bind("numberOfStreams", params_.number_of_streams);
   expr_evaluator_.bind("rank", communicator_->deviceId());
 
-  std::vector<IterDomain*> input_domain;
   // process input values, converting IValue to PolymorphicValue
   for (const auto& [val, pvalue] : val_to_PValue) {
     expr_evaluator_.bind(val, pvalue);
     #ifdef USE_LLVM_JIT
-    input_domain = val->as<TensorView>()->getLogicalDomain();
+    std::cout << "input tensor" << std::endl;
     container_->getHostIrLlvmJit()->setInputTensor(pvalue.as<at::Tensor>());
     #endif
   }
@@ -743,8 +745,6 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       "Allocation must be on a TensorView but got ",
       allocate->buffer());
   TensorView* tv = allocate->buffer()->as<TensorView>();
-
-  tv->printTransforms();
   
   if (expr_evaluator_.isKnown(tv)) {
     return;
@@ -753,24 +753,15 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       communicator_ ? communicator_->device() : at::Device("cuda:0");
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  
-  if (!container_->getHostIrLlvmJit()) {
-    std::cout << "Compiling with LLVM JIT" << std::endl;
-    auto host_ir_llvm_jit = std::make_unique<HostIrLlvmJit>(4);
-    host_ir_llvm_jit->compile(tv);
-    container_->setHostIrLlvmJit(std::move(host_ir_llvm_jit));
+  if (container_->getHostIrLlvmJit()) {
+    container_->getHostIrLlvmJit()->inferShapeAndStride(result_shape, result_stride);
+  } else {
+    std::cout << "Falling back to ExpressionEvaluator" << std::endl;
+    GlobalBufferInfo info =
+      getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
+      result_shape = info.shape_info.logical_sizes;
+      result_stride = info.shape_info.logical_strides;
   }
-
-  std::cout << "Infer shape and stride with LLVM JIT" << std::endl;
-  NVF_ERROR(container_->getHostIrLlvmJit(), "HostIrContainer currenly only supports a single JIT-compiled allocation");
-  container_->getHostIrLlvmJit()->inferShapeAndStride(result_shape, result_stride);
-
-  #ifdef FALLBACK_TO_EXPR_EVAL
-GlobalBufferInfo info =
-        getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
-  result_shape = info.shape_info.logical_sizes;
-  result_stride = info.shape_info.logical_strides;
-#endif
   auto dtype =
       (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
   auto tensor = at::native::empty_strided_cuda(
