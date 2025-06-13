@@ -2326,13 +2326,22 @@ std::string ViewOp::toInlineString(int indent_size) const {
   NVF_CHECK(false, "Tensor op can not be printed inline");
 }
 
+
+#define USE_LLVM_JIT
 std::vector<PolymorphicValue> ViewOp::evaluate(
     const ExpressionEvaluator& ee,
     const std::vector<PolymorphicValue>& inputs) const {
   NVF_ERROR(inputs.size() == 1);
   const at::Tensor& in_tensor = inputs[0].as<at::Tensor>();
 
+  #ifdef USE_LLVM_JIT
+  std::vector<int64_t> out_shape;
+  std::vector<int64_t> out_stride;
+  HostIrLlvmJit::getInstance().inferShapeAndStride(out_shape, out_stride);
+  return {in_tensor.reshape(out_shape)};
+  #else
   const auto& [out_shape, _] = inferShapeOfOutput(out(), ee);
+  #endif
   // TODO: check allocation domain and contiguity.
 
   // Use `at::Tensor::reshape` instead of `at::Tensor::view` because `ViewOp`

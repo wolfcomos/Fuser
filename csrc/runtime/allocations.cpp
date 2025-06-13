@@ -48,7 +48,14 @@ KernelArgumentHolder inferOutputSizes(
         output->isA<TensorView>(),
         "Cannot allocate outputs that are not tensors.");
     auto output_tv = output->as<TensorView>();
+    #ifdef USE_LLVM_JIT
+    std::vector<int64_t> sizes;
+    std::vector<int64_t> strides;
+    HostIrLlvmJit::getInstance().compile(output_tv);
+    HostIrLlvmJit::getInstance().inferShapeAndStride(sizes, strides);
+    #else
     const auto& [sizes, strides] = inferShapeOfOutput(output_tv, expr_eval);
+    #endif
     const auto dtype = (output_tv->dtype() == DataType::Index)
         ? data_type_to_aten(arg_index_type)
         : data_type_to_aten(output_tv->dtype());
@@ -653,7 +660,7 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferAllocationShape(
 
 } // namespace
 
-#define USE_LLVM_JIT
+// #define USE_LLVM_JIT
 
 std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
     TensorView* tv,
@@ -663,9 +670,9 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
   // need to be allocated while taking expanded broadcasts into
   // account.
 
+  #ifdef USE_LLVM_JIT
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  #ifdef USE_LLVM_JIT
   HostIrLlvmJit::getInstance().compile(tv);
   HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride);
   return {result_shape, result_stride};
