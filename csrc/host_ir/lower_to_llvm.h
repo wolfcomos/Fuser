@@ -27,10 +27,13 @@ class HostIrLlvmJit {
   at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);
 
   // Infer the shape and stride of the output tensor
-  void inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride);
+  void inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride, const TensorView* output_tv);
 
   // Set the input tensors
   void setInputTensor(const at::Tensor& input_tensor);
+
+  // If input tensor is set, return true
+  bool isInputTensorSet() const;
 
  private:
   // Private constructor

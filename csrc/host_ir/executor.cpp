@@ -236,7 +236,6 @@ KernelArgumentHolder HostIrEvaluator::runWithInputs(
   NVF_ERROR_EQ(std::ssize(container_->inputs()), args.size());
   for (auto&& [in_val, arg] : zip(container_->inputs(), args)) {
     if (in_val->isA<TensorView>()) {
-      std::cout << "HELLO" << std::endl;
       HostIrLlvmJit::getInstance().setInputTensor(arg.as<at::Tensor>());
     }
     expr_evaluator_.bind(in_val, arg);
@@ -755,16 +754,16 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       communicator_ ? communicator_->device() : at::Device("cuda:0");
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  std::cout << "HELLO" << std::endl;
-  #ifdef USE_LLVM_JIT
-  HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride);
-  #else
+  // #ifdef USE_LLVM_JIT
+  if (HostIrLlvmJit::getInstance().isInputTensorSet()) {
+    HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride, tv);
+  } else {
     std::cout << "Falling back to ExpressionEvaluator" << std::endl;
     GlobalBufferInfo info =
       getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
       result_shape = info.shape_info.logical_sizes;
       result_stride = info.shape_info.logical_strides;
-  #endif
+  }
   auto dtype =
       (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
   auto tensor = at::native::empty_strided_cuda(

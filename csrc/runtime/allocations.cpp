@@ -48,14 +48,15 @@ KernelArgumentHolder inferOutputSizes(
         output->isA<TensorView>(),
         "Cannot allocate outputs that are not tensors.");
     auto output_tv = output->as<TensorView>();
-    #ifdef USE_LLVM_JIT
+    // #ifdef USE_LLVM_JIT
     std::vector<int64_t> sizes;
     std::vector<int64_t> strides;
     HostIrLlvmJit::getInstance().compile(output_tv);
-    HostIrLlvmJit::getInstance().inferShapeAndStride(sizes, strides);
-    #else
-    const auto& [sizes, strides] = inferShapeOfOutput(output_tv, expr_eval);
-    #endif
+    if (HostIrLlvmJit::getInstance().isInputTensorSet()) {
+      HostIrLlvmJit::getInstance().inferShapeAndStride(sizes, strides, output_tv);
+    } else {
+      const auto& [sizes, strides] = inferShapeOfOutput(output_tv, expr_eval);
+    }
     const auto dtype = (output_tv->dtype() == DataType::Index)
         ? data_type_to_aten(arg_index_type)
         : data_type_to_aten(output_tv->dtype());
@@ -660,8 +661,6 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferAllocationShape(
 
 } // namespace
 
-// #define USE_LLVM_JIT
-
 std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
     TensorView* tv,
     const ExpressionEvaluator& expr_eval) {
@@ -670,13 +669,18 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
   // need to be allocated while taking expanded broadcasts into
   // account.
 
-  #ifdef USE_LLVM_JIT
+  // #ifdef USE_LLVM_JIT
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
   HostIrLlvmJit::getInstance().compile(tv);
-  HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride);
-  return {result_shape, result_stride};
-  #else
+  tv->printTransforms();
+  std::cout << tv->toString() << std::to_string(reinterpret_cast<uintptr_t>(tv)) << std::endl;
+  if (HostIrLlvmJit::getInstance().isInputTensorSet()) {
+    HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride, tv);
+    return {result_shape, result_stride};
+  }
+  std::cout << "llvm_shape: " << result_shape << std::endl;
+  std::cout << "llvm_stride: " << result_stride << std::endl;
   auto size_stride = inferAllocationShape(tv, expr_eval);
   if (!tv->hasAllocation()) {
     return size_stride;
@@ -689,8 +693,10 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
   // meta_tensor at all, size + stride should be used directly in the
   // `transformFromAllocationToLogical`
   meta_tensor = transformFromAllocationToLogical(meta_tensor, tv, expr_eval);
+  std::cout << "meta_tensor sizes: " << meta_tensor.sizes() << std::endl;
+  std::cout << "meta_tensor strides: " << meta_tensor.strides() << std::endl;
   return {meta_tensor.sizes().vec(), meta_tensor.strides().vec()};
-  #endif
+  // #endif
 }
 
 TensorShapeInfo inferTensorShapes(
