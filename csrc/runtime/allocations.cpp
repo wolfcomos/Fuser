@@ -664,10 +664,10 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
   // #ifdef USE_LLVM_JIT
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  HostIrLlvmJit::getInstance().compile(tv);
+  // HostIrLlvmJit::getInstance().compile(tv);
   // tv->printTransforms();
   // std::cout << tv->toString() << std::to_string(reinterpret_cast<uintptr_t>(tv)) << std::endl;
-  if (HostIrLlvmJit::getInstance().isInputTensorSet()) {
+  if (HostIrLlvmJit::getInstance().isInputTensorSet() && HostIrLlvmJit::getInstance().isCompiled(tv)) {
     HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride, tv);
     return {result_shape, result_stride};
   }

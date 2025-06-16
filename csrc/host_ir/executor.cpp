@@ -751,19 +751,13 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
     return;
   }
   c10::Device device =
-      communicator_ ? communicator_->device() : at::Device("cuda:0");
+  communicator_ ? communicator_->device() : at::Device("cuda:0");
   std::vector<int64_t> result_shape;
   std::vector<int64_t> result_stride;
-  // #ifdef USE_LLVM_JIT
-  if (HostIrLlvmJit::getInstance().isInputTensorSet()) {
-    HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride, tv);
-  } else {
-    std::cout << "Falling back to ExpressionEvaluator" << std::endl;
-    GlobalBufferInfo info =
-      getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
-      result_shape = info.shape_info.logical_sizes;
-      result_stride = info.shape_info.logical_strides;
-  }
+  GlobalBufferInfo info =
+    getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
+    result_shape = info.shape_info.logical_sizes;
+    result_stride = info.shape_info.logical_strides;
   auto dtype =
       (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
   auto tensor = at::native::empty_strided_cuda(

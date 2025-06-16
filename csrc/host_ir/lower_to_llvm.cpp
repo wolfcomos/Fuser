@@ -103,7 +103,7 @@ int mapToInputDomain(std::unordered_map<int, Val*>& boundary_vals, Val* current_
     if(exact_graph.disjointValSets().strictAreMapped(current_domain, boundary_val.second)){
       return boundary_val.first;
     }
-    // std::cout << "boundary_val: " << boundary_val.second->toString() << " current_domain: " << current_domain->toString() << " are not in the same valgraph" << std::endl;
+    // std::cout << "mapToInputDomain: boundary_val: " << boundary_val.second->toString() << " current_domain: " << current_domain->toString() << " are not in the same valgraph" << std::endl;
   }
   return -1;
 }
@@ -777,7 +777,7 @@ llvm::orc::ThreadSafeModule generate_infer_shape_module(std::vector<IterDomain*>
     // std::cout << "index: " << index << std::endl;
     // std::cout << "val: " << val->toString() << std::endl;
     if(index != -1){
-      // std::cout << "boundary_vals[index]: " << boundary_vals[index]->toString() << std::endl;
+      // std::cout << "val: " << val->toString() << " boundary_vals[index]: " << boundary_vals[index]->toString() << std::endl;
       val2llvm_val[graph.toGroup(val)] = val2llvm_val[graph.toGroup(boundary_vals[index])];
     }
   }
@@ -792,6 +792,7 @@ llvm::orc::ThreadSafeModule generate_infer_shape_module(std::vector<IterDomain*>
     }
     else{
       if(val2llvm_val[graph.toGroup(output_values[i])] == nullptr){
+        std::cout << "output_values[i]: " << output_values[i]->toString() << std::endl;
         NVF_ERROR(false, "LLVM Lowering Error: Output value is not found in val2llvm_val");
       }
       builder.CreateStore(val2llvm_val[graph.toGroup(output_values[i])], output_i_ptr);
@@ -844,13 +845,13 @@ HostIrLlvmJit::~HostIrLlvmJit() = default;
 HostIrLlvmJit::HostIrLlvmJit(HostIrLlvmJit&&) noexcept = default;
 HostIrLlvmJit& HostIrLlvmJit::operator=(HostIrLlvmJit&&) noexcept = default;
 
-void HostIrLlvmJit::compile(const TensorView* output_tv) {
+void HostIrLlvmJit::compile(const HostIrContainer* container) {
   // Check if already compiled for this specific output_tv
   if (pimpl_->compiled_functions.find(output_tv) != pimpl_->compiled_functions.end()) {
     return;  // Already compiled for this output_tv
   }
   FUSER_PERF_SCOPE("HostIrLlvmJit::compile");
-  std::cout << "compile" << std::endl;
+  std::cout << "actually compile" << output_tv->toString() << std::endl;
 
   // Generate unique names based on the output tensor
   std::string base_name = "output_" + std::to_string(reinterpret_cast<uintptr_t>(output_tv));
@@ -866,15 +867,15 @@ void HostIrLlvmJit::compile(const TensorView* output_tv) {
   // This simplified API assumes a single input TensorView.
   // This can be extended to handle multiple inputs.
   std::vector<TensorView*> input_tvs;
-  TensorView* input_tv = nullptr;
   for (auto inp : fusion->inputs()) {
     if (auto tv = dynamic_cast<TensorView*>(inp)) {
-      NVF_ERROR(
-          input_tv == nullptr,
-          "Multiple input TensorViews not yet supported in this simplified API");
       input_tvs.push_back(tv);
     }
   }
+
+  // for(auto* val : output_tv->getLogicalDomain()){
+  //   std::cout << "output: " << val->toString() << std::endl;
+  // }
   NVF_ERROR(input_tvs.size() > 0, "No input TensorView found in fusion");
 
   std::vector<IterDomain*> input_logical_domains;
@@ -1016,10 +1017,12 @@ HostIrLlvmJit& HostIrLlvmJit::getInstance(int num_threads) {
 }
 
 bool HostIrLlvmJit::isInputTensorSet() const {
-  // for (auto& input_tensor : input_tensors_) {
-  //   std::cout << "input_tensor: " << input_tensor.sizes() << std::endl;
-  // }
   return !input_tensors_.empty();
+}
+
+bool HostIrLlvmJit::isCompiled(const TensorView* output_tv) const {
+  std::cout << "isCompiled: " << output_tv->toString() << std::endl;
+  return pimpl_->compiled_functions.find(output_tv) != pimpl_->compiled_functions.end();
 }
 
 } // namespace nvfuser

@@ -553,11 +553,13 @@ void FusionKernelRuntime::compileFusionParallel(KernelArgumentHolder args) {
     }
     for (const Val* out : segmented_fusion_->outputs()) {
       hic->addOutput(ir_cloner.clone(out));
-      std::cout << "Compiling with LLVM JIT" << std::endl;
-      HostIrLlvmJit::getInstance().compile(out->as<TensorView>());
     }
 
     hir_pass::InsertDeallocations().runPass(hic.get());
+
+    for(auto* val : hic->outputs()){
+      HostIrLlvmJit::getInstance().compile(val->as<TensorView>());
+    }
 
     hie_ = std::make_unique<hir::HostIrEvaluator>(
         std::move(hic), &Communicator::getInstance());
@@ -633,9 +635,6 @@ std::optional<std::unique_ptr<HeuristicParamsList>> FusionKernelRuntime::
       evaluator_precomputed_values->bindInputs(group_runtime_inputs);
       // TODO Remove binding the original fusion inputs when creating
       // heuristics for fusion segment.
-      for(auto arg : args){
-        std::cout << "AAAA Tensor arg: " << arg << std::endl;
-      }
       evaluator_precomputed_values->bindValues(
           group_to_run->getCompleteFusionInputs(), args);
       evaluator_precomputed_values->evaluate();

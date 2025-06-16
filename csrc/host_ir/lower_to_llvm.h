@@ -21,7 +21,7 @@ class HostIrLlvmJit {
   HostIrLlvmJit& operator=(const HostIrLlvmJit&) = delete;
 
   // Compile a fusion associated with the given output TensorView.
-  void compile(const TensorView* output_tv);
+  void compile(const HostIrContainer* container);
 
   // Allocate an output tensor with the given input tensors
   at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);
@@ -34,6 +34,9 @@ class HostIrLlvmJit {
 
   // If input tensor is set, return true
   bool isInputTensorSet() const;
+
+  // If compiled, return true
+  bool isCompiled(const TensorView* output_tv) const;
 
  private:
   // Private constructor
