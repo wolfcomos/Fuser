@@ -633,6 +633,9 @@ std::optional<std::unique_ptr<HeuristicParamsList>> FusionKernelRuntime::
       evaluator_precomputed_values->bindInputs(group_runtime_inputs);
       // TODO Remove binding the original fusion inputs when creating
       // heuristics for fusion segment.
+      for(auto arg : args){
+        std::cout << "AAAA Tensor arg: " << arg << std::endl;
+      }
       evaluator_precomputed_values->bindValues(
           group_to_run->getCompleteFusionInputs(), args);
       evaluator_precomputed_values->evaluate();

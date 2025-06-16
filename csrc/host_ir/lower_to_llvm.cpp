@@ -774,10 +774,10 @@ llvm::orc::ThreadSafeModule generate_infer_shape_module(std::vector<IterDomain*>
   // Map the output values to the input values if they are the same
   for(auto* val : output_values){
     auto index = mapToInputDomain(boundary_vals, val, graph);
-    std::cout << "index: " << index << std::endl;
-    std::cout << "val: " << val->toString() << std::endl;
+    // std::cout << "index: " << index << std::endl;
+    // std::cout << "val: " << val->toString() << std::endl;
     if(index != -1){
-      std::cout << "boundary_vals[index]: " << boundary_vals[index]->toString() << std::endl;
+      // std::cout << "boundary_vals[index]: " << boundary_vals[index]->toString() << std::endl;
       val2llvm_val[graph.toGroup(val)] = val2llvm_val[graph.toGroup(boundary_vals[index])];
     }
   }
@@ -785,15 +785,15 @@ llvm::orc::ThreadSafeModule generate_infer_shape_module(std::vector<IterDomain*>
   // Store the output values to the preallocated output buffer
   for(size_t i = 0; i < output_values.size(); i++){
 
-    if(val2llvm_val[graph.toGroup(output_values[i])] == nullptr){
-      std::cout << "output_values[i]: " << output_values[i]->toString() << std::endl;
-    }
     auto* output_i_ptr = builder.CreateGEP(int64Ty, output_ptr, builder.getInt64(i), "ptr");
     if(output_values[i]->as<IterDomain>()->extent()->isConstInt()){
       llvm::Value* extent = builder.getInt64(stoi(output_values[i]->as<IterDomain>()->extent()->toString()));
       builder.CreateStore(extent, output_i_ptr);
     }
     else{
+      if(val2llvm_val[graph.toGroup(output_values[i])] == nullptr){
+        NVF_ERROR(false, "LLVM Lowering Error: Output value is not found in val2llvm_val");
+      }
       builder.CreateStore(val2llvm_val[graph.toGroup(output_values[i])], output_i_ptr);
     }
   }
@@ -849,6 +849,8 @@ void HostIrLlvmJit::compile(const TensorView* output_tv) {
   if (pimpl_->compiled_functions.find(output_tv) != pimpl_->compiled_functions.end()) {
     return;  // Already compiled for this output_tv
   }
+  FUSER_PERF_SCOPE("HostIrLlvmJit::compile");
+  std::cout << "compile" << std::endl;
 
   // Generate unique names based on the output tensor
   std::string base_name = "output_" + std::to_string(reinterpret_cast<uintptr_t>(output_tv));
@@ -918,7 +920,7 @@ void HostIrLlvmJit::compile(const TensorView* output_tv) {
 }
 
 void HostIrLlvmJit::setInputTensor(const at::Tensor& input_tensor) {
-  std::cout << "input_tensor: " << input_tensor.sizes() << std::endl;
+  // std::cout << "input_tensor: " << input_tensor.sizes() << std::endl;
   input_tensors_.push_back(input_tensor);
 }
 
@@ -929,7 +931,7 @@ void HostIrLlvmJit::inferShapeAndStride(std::vector<int64_t>& result_shape, std:
       "JIT must be compiled before running.");
   FUSER_PERF_SCOPE("HostIrLlvmJit::inferShapeAndStride");
   std::cout << "inferShapeAndStride" << std::endl;
-  std::cout << input_tensors_.size() << std::endl;
+  // std::cout << input_tensors_.size() << std::endl;
   // Allocate memory for shape result
   std::vector<int64_t> logical_shape_result(output_tv->getLogicalDomain().size());
   std::vector<int64_t> input_sizes;
@@ -1014,9 +1016,9 @@ HostIrLlvmJit& HostIrLlvmJit::getInstance(int num_threads) {
 }
 
 bool HostIrLlvmJit::isInputTensorSet() const {
-  for (auto& input_tensor : input_tensors_) {
-    std::cout << "input_tensor: " << input_tensor.sizes() << std::endl;
-  }
+  // for (auto& input_tensor : input_tensors_) {
+  //   std::cout << "input_tensor: " << input_tensor.sizes() << std::endl;
+  // }
   return !input_tensors_.empty();
 }
 
