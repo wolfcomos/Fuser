@@ -48,15 +48,7 @@ KernelArgumentHolder inferOutputSizes(
         output->isA<TensorView>(),
         "Cannot allocate outputs that are not tensors.");
     auto output_tv = output->as<TensorView>();
-    // #ifdef USE_LLVM_JIT
-    std::vector<int64_t> sizes;
-    std::vector<int64_t> strides;
-    HostIrLlvmJit::getInstance().compile(output_tv);
-    if (HostIrLlvmJit::getInstance().isInputTensorSet()) {
-      HostIrLlvmJit::getInstance().inferShapeAndStride(sizes, strides, output_tv);
-    } else {
-      const auto& [sizes, strides] = inferShapeOfOutput(output_tv, expr_eval);
-    }
+    const auto& [sizes, strides] = inferShapeOfOutput(output_tv, expr_eval);
     const auto dtype = (output_tv->dtype() == DataType::Index)
         ? data_type_to_aten(arg_index_type)
         : data_type_to_aten(output_tv->dtype());
