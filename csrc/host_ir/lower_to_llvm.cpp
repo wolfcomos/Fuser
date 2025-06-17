@@ -933,8 +933,7 @@ llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
     llvm::IRBuilder<> builder(*ctx);
     
     // Create function type: at::Tensor* (*)(int64_t, int64_t, ...)
-    std::vector<llvm::Type*> param_types(input_logical_domain.size()+
-    output_logical_domain.size()+output_allocation_domain.size(), llvm::Type::getInt64Ty(*ctx));
+    std::vector<llvm::Type*> param_types(input_logical_domain.size(), llvm::Type::getInt64Ty(*ctx));
     llvm::Type* return_type = llvm::Type::getInt8PtrTy(*ctx); // at::Tensor as opaque pointer
     llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
     
@@ -965,8 +964,8 @@ llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
     std::unordered_map<ValGroup, llvm::Value*> val2llvm_val;
 
     // Initialize input values
-    std::vector<Val*> input_vals = domain2vals(input_domain);
-    for(size_t i = 0; i < input_domain.size(); i++) {
+    std::vector<Val*> input_vals = domain2vals(input_logical_domain);
+    for(size_t i = 0; i < input_logical_domain.size(); i++) {
         boundary_vals[i] = input_vals[i];
         val2llvm_val[graph.toGroup(input_vals[i])] = builder.CreateLoad(
             llvm::Type::getInt64Ty(ctx),
@@ -975,23 +974,23 @@ llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
     }
 
     // Generate shape LLVM IR
-    generate_all_shape_llvm_ir(graph, input_domain, output_domain, val2llvm_val, boundary_vals, builder);
+    generate_all_shape_llvm_ir(graph, input_logical_domain, output_logical_domain, val2llvm_val, boundary_vals, builder);
 
     // Create arrays for sizes and strides
     llvm::Value* sizes_array = builder.CreateAlloca(
         llvm::Type::getInt64Ty(ctx),
-        builder.getInt64(num_dims),
+        builder.getInt64(output_logical_domain.size()),
         "sizes_array"
     );
     
     llvm::Value* strides_array = builder.CreateAlloca(
         llvm::Type::getInt64Ty(ctx),
-        builder.getInt64(num_dims),
+        builder.getInt64(output_logical_domain.size()),
         "strides_array"
     );
 
     // Store calculated sizes
-    std::vector<Val*> output_vals = domain2vals(output_domain);
+    std::vector<Val*> output_vals = domain2vals(output_logical_domain);
     for(size_t i = 0; i < output_vals.size(); i++) {
         llvm::Value* size_ptr = builder.CreateGEP(
             llvm::Type::getInt64Ty(ctx),
@@ -1006,12 +1005,12 @@ llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
     std::unordered_map<ValGroup, StrideInfo> val2stride;
     llvm::Value* running_stride = builder.getInt64(1);
     
-    for(auto it = output_domain.rbegin(); it != output_domain.rend(); ++it) {
-        auto iter_domain = (*it)->as<IterDomain>();
+    for(auto it = output_allocation_domain.rbegin(); it != output_allocation_domain.rend(); ++it) {
+        auto iter_domain = *it;
         if(iter_domain->getParallelType() == ParallelType::DIDx) {
             continue;
         }
-        generate_stride_llvm_ir(*it, val2stride, builder, boundary_vals, running_stride, graph);
+        generate_stride_llvm_ir(it, val2stride, builder, boundary_vals, running_stride, graph);
     }
 
     // Store calculated strides
@@ -1053,9 +1052,9 @@ llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
     // Call at::empty_strided
     std::vector<llvm::Value*> call_args = {
         sizes_array,
-        builder.getInt64(num_dims),
+        builder.getInt64(output_logical_domain.size()),
         strides_array,
-        builder.getInt64(num_dims),
+        builder.getInt64(output_logical_domain.size()),
         options
     };
     
