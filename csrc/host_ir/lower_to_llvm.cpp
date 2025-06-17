@@ -35,6 +35,8 @@
 #include <chrono>
 
 #include <host_ir/lower_to_llvm.h>
+#include <ATen/ATen.h>
+#include <c10/core/MemoryFormat.h> // for c10::optional
 
 namespace nvfuser {
 /*
@@ -829,17 +831,25 @@ HostIrLlvmJit::HostIrLlvmJit(int num_threads) : pimpl_(new LlvmJitImpl) {
   pimpl_->jit = ExitOnErr(
       llvm::orc::LLJITBuilder().setNumCompileThreads(num_threads).create());
   std::cout << "LLJIT created" << std::endl;
-  auto &jd = pimpl_->jit->getMainJITDylib();
-  auto mangle = llvm::orc::MangleAndInterner(jd.getExecutionSession(), pimpl_->jit->getDataLayout());
-  auto s = [](llvm::orc::MangleAndInterner interner) {
-      llvm::orc::SymbolMap symbolMap;
-      symbolMap[interner("at::empty_strided")] = {
-          llvm::pointerToJITTargetAddress(&at::empty_strided),
-          llvm::JITSymbolFlags(),
-      };
-      return llvm::orc::absoluteSymbols(symbolMap);
-  }(mangle);
-  ExitOnError(jd.define(s));
+  llvm::orc::JITDylib & dest_dynamic_lib = pimpl_->jit->getMainJITDylib();
+  auto mangler = llvm::orc::MangleAndInterner(dest_dynamic_lib.getExecutionSession(), pimpl_->jit->getDataLayout());
+  dest_dynamic_lib.addGenerator(
+      ExitOnErr(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          pimpl_->jit->getDataLayout().getGlobalPrefix()))
+  );
+
+  // Disambiguate the overload using a lambda:
+  void* func_ptr = reinterpret_cast<void*>(
+      +[](at::IntArrayRef a, at::IntArrayRef b, const at::TensorOptions& c) {
+          return at::empty_strided(a, b, c);
+      }
+  );
+
+  auto addr = llvm::orc::ExecutorAddr::fromPtr(func_ptr);
+
+  llvm::orc::SymbolMap symbolMap;
+  symbolMap[mangler("at::empty_strided")] = llvm::orc::ExecutorSymbolDef(addr, llvm::JITSymbolFlags::Exported);
+  ExitOnErr(dest_dynamic_lib.define(llvm::orc::absoluteSymbols(symbolMap)));
 }
 
 // The destructor must be defined here where LlvmJitImpl is a complete type.
