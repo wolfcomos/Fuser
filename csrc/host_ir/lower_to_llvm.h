@@ -11,6 +11,16 @@
 
 namespace nvfuser {
 
+// Combined inference function type that handles both shape and stride inference
+using InferenceFunc = void (*)(
+    int64_t* input_shape,    // Input shape array
+    int64_t input_size,      // Size of input shape array
+    int64_t* output_shape,   // Output shape array
+    int64_t output_size,     // Size of output shape array
+    int64_t* output_stride,  // Output stride array
+    int64_t stride_size      // Size of output stride array
+);
+
 class HostIrLlvmJit {
  public:
   // Get singleton instance
@@ -22,12 +32,6 @@ class HostIrLlvmJit {
 
   // Compile a fusion associated with the given output TensorView.
   void compile(const HostIrContainer* container);
-
-  // Allocate an output tensor with the given input tensors
-  at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);
-
-  // Infer the shape and stride of the output tensor
-  void inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride, const TensorView* output_tv);
 
   // Set the input tensors
   void setInputTensor(const at::Tensor& input_tensor);
