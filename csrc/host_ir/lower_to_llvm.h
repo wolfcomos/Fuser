@@ -42,6 +42,9 @@ class HostIrLlvmJit {
   // If compiled, return true
   bool isCompiled(const TensorView* output_tv) const;
 
+  // Allocate an output tensor with the given input tensors
+  at::Tensor allocate(const TensorView* output_tv) const;
+
  private:
   // Private constructor
   explicit HostIrLlvmJit(int num_threads = 4);

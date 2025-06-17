@@ -12,6 +12,7 @@
 #include <ir/all_nodes.h>
 #include <ops/all_ops.h>
 #include <val_graph_visitor.h>
+#include <bfs.h>
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
@@ -211,15 +212,19 @@ Dumping all exprs between input and output domain, currently this is only used f
 
 */
 
-void generate_all_shape_llvm_ir(const ValGraph& graph, std::vector<IterDomain*>& input_domain, std::vector<IterDomain*>& output_domain, 
+void generate_all_shape_llvm_ir(const ValGraph& graph, const std::vector<IterDomain*>& input_domain, const std::vector<IterDomain*>& output_domain, 
 std::unordered_map<ValGroup, llvm::Value*>& val2llvm_val, std::unordered_map<int, Val*>& boundary_vals, llvm::IRBuilder<>& builder){
-  ValGroups tv0_loop_groups = graph.toGroups(input_domain);
-  ValGroups tv1_loop_groups = graph.toGroups(output_domain);
-  auto result = getAllExprGroupsBetween(graph, tv0_loop_groups, tv1_loop_groups, false).first;
-  for(auto expr_group : result){
-    for(auto expr : *expr_group.first){
-      generate_shape_llvm_ir(expr, builder, val2llvm_val, boundary_vals, graph);
-    }
+  // ValGroups tv0_loop_groups = graph.toGroups(input_domain);
+  // ValGroups tv1_loop_groups = graph.toGroups(output_domain);
+  // auto result = getAllExprGroupsBetween(graph, tv0_loop_groups, tv1_loop_groups, false).first;
+  // for(auto expr_group : result){
+  //   for(auto expr : *expr_group.first){
+  //     generate_shape_llvm_ir(expr, builder, val2llvm_val, boundary_vals, graph);
+  //   }
+  // }
+  auto result = getExprsBetween<IRBFS>({input_domain.begin(), input_domain.end()}, {output_domain.begin(), output_domain.end()}, false).first;
+  for(auto [expr, direction] : result){
+    generate_shape_llvm_ir(expr, builder, val2llvm_val, boundary_vals, graph);
   }
 }
 
@@ -625,179 +630,173 @@ void generate_stride_llvm_ir(
     }
 }
 
-/*
 
-Generate infer stride module
-
-*/
-llvm::orc::ThreadSafeModule generate_infer_stride_module(std::vector<IterDomain*>& logical_domain, std::vector<IterDomain*>& allocation_domain, Fusion& fusion, const std::string& module_name, const std::string& function_name) {
-  auto Context = std::make_unique<llvm::LLVMContext>();
-  auto* ctx = Context.get();
-  auto Module = std::make_unique<llvm::Module>(module_name, *ctx);
-  llvm::IRBuilder<> builder(*ctx);
-  auto* int64Ty = llvm::Type::getInt64Ty(*ctx);
-  auto* ptrTy = llvm::PointerType::getUnqual(int64Ty);
-
-  auto* funcTy = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx), {ptrTy, int64Ty, ptrTy, int64Ty, ptrTy, int64Ty}, false);
-  auto* func = llvm::Function::Create(funcTy, llvm::Function::ExternalLinkage, function_name, Module.get());
-  auto* entry = llvm::BasicBlock::Create(*ctx, "entry", func);
-  builder.SetInsertPoint(entry);
-
-  std::vector<Val*> input_vals = domain2vals(logical_domain);
-  std::vector<Val*> output_vals = domain2vals(allocation_domain);
-  auto arg_it = func->arg_begin();
-  llvm::Value* input_shape_buffer_ptr = &*arg_it;
-  llvm::Value* output_stride_buffer_ptr = &*arg_it+2;
-  llvm::Value* output_shape_buffer_ptr = &*arg_it+4;
-  std::unordered_map<ValGroup, StrideInfo> val2stride;
-  std::unordered_map<int, Val*> boundary_vals;
-  for(size_t i = 0; i < input_vals.size(); i++){
-    boundary_vals[i] = input_vals[i];
-  }
-
-  IdModel id_model(&fusion);
-  const ValGraph& graph = id_model.buildExactGraph();
-  
-  for(long unsigned int i = 0; i < input_vals.size(); i++){
-    auto* zero = builder.getInt64(i);
-    auto* input_i_ptr = builder.CreateGEP(int64Ty, input_shape_buffer_ptr, zero, "ptr");
-    auto* input_i_val = builder.CreateLoad(int64Ty, input_i_ptr, "val");
-    val2stride[graph.toGroup(input_vals[i])] = StrideInfo();
-    val2stride[graph.toGroup(input_vals[i])].llvm_extent = input_i_val;
-  }
-
-  for(auto* val : output_vals){
-    if(val->as<IterDomain>()->getParallelType() == ParallelType::DIDx || 
-    val->as<IterDomain>()->getParallelType() == ParallelType::DIDy ||
-    val->as<IterDomain>()->getParallelType() == ParallelType::DIDz
-    ){
-      input_shape_preprocess(val->as<IterDomain>(), val2stride, boundary_vals, builder, graph);
+llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
+    const std::string& module_name,
+    const std::string& function_name,
+    const std::vector<IterDomain*>& input_logical_domain,
+    const std::vector<IterDomain*>& output_logical_domain,
+    const std::vector<IterDomain*>& output_allocation_domain,
+    Fusion& fusion) {
+    
+    auto Context = std::make_unique<llvm::LLVMContext>();
+    auto* ctx = Context.get();
+    auto Module = std::make_unique<llvm::Module>(module_name, *ctx);
+    llvm::IRBuilder<> builder(*ctx);
+    
+    // Create function type: at::Tensor* (*)(int64_t, int64_t, ...)
+    auto* int64Ty = llvm::Type::getInt64Ty(*ctx);
+    auto* tensorTy = llvm::PointerType::getUnqual(int64Ty); // at::Tensor as opaque pointer
+    
+    std::vector<llvm::Type*> param_types(input_logical_domain.size(), int64Ty);
+    llvm::FunctionType* func_type = llvm::FunctionType::get(tensorTy, param_types, false);
+    
+    // Create the function
+    llvm::Function* func = llvm::Function::Create(
+        func_type,
+        llvm::Function::ExternalLinkage,
+        function_name,
+        Module.get()
+    );
+    
+    // Create entry block
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(*ctx, "entry", func);
+    builder.SetInsertPoint(entry);
+    
+    // Create alloca for each argument
+    std::vector<llvm::Value*> arg_allocas;
+    for (auto& arg : func->args()) {
+        llvm::AllocaInst* alloca = builder.CreateAlloca(arg.getType(), nullptr, arg.getName());
+        builder.CreateStore(&arg, alloca);
+        arg_allocas.push_back(alloca);
     }
-    auto index = mapToInputDomain(boundary_vals, val, graph);
-    if(index != -1){
-      val2stride[graph.toGroup(val)] = val2stride[graph.toGroup(boundary_vals[index])];
+
+    // Initialize the id model and val graph
+    IdModel id_model(&fusion);
+    const ValGraph& graph = id_model.buildExactGraph();
+    std::unordered_map<int, Val*> boundary_vals;
+    std::unordered_map<ValGroup, llvm::Value*> val2llvm_val;
+
+    // Initialize input values
+    std::vector<Val*> input_vals = domain2vals(input_logical_domain);
+    for(size_t i = 0; i < input_logical_domain.size(); i++) {
+        boundary_vals[i] = input_vals[i];
+        val2llvm_val[graph.toGroup(input_vals[i])] = builder.CreateLoad(
+            int64Ty,
+            arg_allocas[i]
+        );
     }
-  }
 
-  llvm::Value* running_stride_product = builder.getInt64(1);
-  for(auto it = allocation_domain.rbegin(); it != allocation_domain.rend(); ++it){
-    auto iter_domain = (*it)->as<IterDomain>();
-    // currently we only assume DID domain comes from all split expressions
-    // thus we only need to update the extent by dividing 
-    if(iter_domain->getParallelType() == ParallelType::DIDx){
-      continue;
-    }
-    generate_stride_llvm_ir(*it, val2stride, builder, boundary_vals, running_stride_product, graph);
-  }
+    // Generate shape LLVM IR
+    generate_all_shape_llvm_ir(graph, input_logical_domain, output_logical_domain, val2llvm_val, boundary_vals, builder);
 
-  for(long unsigned int i = 0; i < logical_domain.size(); i++){
-    if(val2stride[graph.toGroup(input_vals[i])].llvm_stride == nullptr){
-      continue;
-    }
-    // inferred stride
-    auto* output_stride_i_ptr = builder.CreateGEP(int64Ty, output_stride_buffer_ptr, builder.getInt64(i), "ptr");
-    builder.CreateStore(val2stride[graph.toGroup(input_vals[i])].llvm_stride, output_stride_i_ptr);
-    // corrected shape
-    auto* output_shape_i_ptr = builder.CreateGEP(int64Ty, output_shape_buffer_ptr, builder.getInt64(i), "ptr");
-    builder.CreateStore(val2stride[graph.toGroup(input_vals[i])].llvm_extent, output_shape_i_ptr);
-  }
+    // Create arrays for sizes and strides
+    llvm::Value* sizes_array = builder.CreateAlloca(
+        int64Ty,
+        builder.getInt64(output_logical_domain.size()),
+        "sizes_array"
+    );
+    
+    llvm::Value* strides_array = builder.CreateAlloca(
+        int64Ty,
+        builder.getInt64(output_logical_domain.size()),
+        "strides_array"
+    );
 
-  builder.CreateRetVoid();
-  // llvm::outs() << "=== LLVM IR ===\n";
-  // Module->print(llvm::outs(), nullptr);
-  return llvm::orc::ThreadSafeModule(std::move(Module), std::move(Context));
-}
-
-/*
-
-Generate infer shape module
-
-*/
-llvm::orc::ThreadSafeModule generate_infer_shape_module(std::vector<IterDomain*>& input_domain, std::vector<IterDomain*>& output_domain, Fusion& fusion, const std::string& module_name, const std::string& function_name) {
-  auto Context = std::make_unique<llvm::LLVMContext>();
-  auto* ctx = Context.get();
-  auto Module = std::make_unique<llvm::Module>(module_name, *ctx);
-  llvm::IRBuilder<> builder(*ctx);
-  std::vector<llvm::Type*> output_types;
-
-  // Initialize the output types, linking with llvm outputs
-  for(size_t i = 0; i < output_domain.size(); i++){
-    output_types.push_back(builder.getInt64Ty());
-  }
-
-  // Initialize the input types, linking with llvm inputs
-  std::vector<llvm::Type*> input_types;
-  for(size_t i = 0; i < input_domain.size(); i++){
-    input_types.push_back(builder.getInt64Ty());
-  }
-
-  // Initialize the function type, input and output types
-  auto* int64Ty = llvm::Type::getInt64Ty(*ctx);
-  auto* ptrTy = llvm::PointerType::getUnqual(int64Ty);
-  auto* funcTy = llvm::FunctionType::get(llvm::Type::getVoidTy(*ctx), {ptrTy, int64Ty, ptrTy, int64Ty}, false);
-  auto* func = llvm::Function::Create(funcTy, llvm::Function::ExternalLinkage, function_name, Module.get());
-  auto* entry = llvm::BasicBlock::Create(*ctx, "entry", func);
-  builder.SetInsertPoint(entry);
-
-  // Cast input and output domains to vals
-  std::vector<Val*> input_values = domain2vals(input_domain);
-  std::vector<Val*> output_values = domain2vals(output_domain);
-
-  // Get the function arguments
-  auto arg_it = func->arg_begin();
-  llvm::Value* input_ptr = &*arg_it;
-  llvm::Value* output_ptr = &*arg_it+2;
-
-  // Initialize the id model and the val graph, and Val to llvm value map
-  IdModel id_model(&fusion);
-  const ValGraph& graph = id_model.buildExactGraph();
-  std::unordered_map<int, Val*> boundary_vals;
-  std::unordered_map<ValGroup, llvm::Value*> val2llvm_val;
-
-  // Initialize the input values, linking with llvm inputs
-  for(size_t i = 0; i < input_domain.size(); i++){
-    boundary_vals[i] = input_values[i];
-    auto* zero = builder.getInt64(i);
-    auto* input_i_ptr = builder.CreateGEP(int64Ty, input_ptr, zero, "ptr");
-    auto* input_i_val = builder.CreateLoad(int64Ty, input_i_ptr, "val");
-    val2llvm_val[graph.toGroup(input_values[i])] = input_i_val;
-  }
-
-  // Generate the shape llvm ir for all the exprs between input and output domain
-  generate_all_shape_llvm_ir(graph, input_domain, output_domain, val2llvm_val, boundary_vals, builder);
-
-  // Map the output values to the input values if they are the same
-  for(auto* val : output_values){
-    auto index = mapToInputDomain(boundary_vals, val, graph);
-    // std::cout << "index: " << index << std::endl;
-    // std::cout << "val: " << val->toString() << std::endl;
-    if(index != -1){
-      // std::cout << "val: " << val->toString() << " boundary_vals[index]: " << boundary_vals[index]->toString() << std::endl;
-      val2llvm_val[graph.toGroup(val)] = val2llvm_val[graph.toGroup(boundary_vals[index])];
-    }
-  }
-
-  // Store the output values to the preallocated output buffer
-  for(size_t i = 0; i < output_values.size(); i++){
-
-    auto* output_i_ptr = builder.CreateGEP(int64Ty, output_ptr, builder.getInt64(i), "ptr");
-    if(output_values[i]->as<IterDomain>()->extent()->isConstInt()){
-      llvm::Value* extent = builder.getInt64(stoi(output_values[i]->as<IterDomain>()->extent()->toString()));
-      builder.CreateStore(extent, output_i_ptr);
-    }
-    else{
-      if(val2llvm_val[graph.toGroup(output_values[i])] == nullptr){
-        std::cout << "output_values[i]: " << output_values[i]->toString() << std::endl;
-        NVF_ERROR(false, "LLVM Lowering Error: Output value is not found in val2llvm_val");
+    // Store calculated sizes
+    std::vector<Val*> output_vals = domain2vals(output_logical_domain);
+    for(size_t i = 0; i < output_vals.size(); i++) {
+      int output_val_potential_index = mapToInputDomain(boundary_vals, output_vals[i], graph);
+      if(output_val_potential_index != -1){
+        llvm::Value* size_ptr = builder.CreateGEP(
+            int64Ty,
+            sizes_array,
+            builder.getInt64(i)
+        );
+        llvm::Value* size_val = val2llvm_val[graph.toGroup(boundary_vals[output_val_potential_index])];
+        builder.CreateStore(size_val, size_ptr);
       }
-      builder.CreateStore(val2llvm_val[graph.toGroup(output_values[i])], output_i_ptr);
+      else{
+        llvm::Value* size_ptr = builder.CreateGEP(
+            int64Ty,
+            sizes_array,
+            builder.getInt64(i)
+        );
+        llvm::Value* size_val;
+        if(val2llvm_val.find(graph.toGroup(output_vals[i])) == val2llvm_val.end()){
+          std::cout << "Untracked output_vals[i]->toString(): " << output_vals[i]->toString() << std::endl;
+          size_val = builder.getInt64(1);
+        }
+        else{
+          size_val = val2llvm_val[graph.toGroup(output_vals[i])];
+        }
+        builder.CreateStore(size_val, size_ptr);
+      }
     }
-  }
 
-  builder.CreateRetVoid();
-  // llvm::outs() << "=== LLVM IR ===\n";
-  // Module->print(llvm::outs(), nullptr);
-  return llvm::orc::ThreadSafeModule(std::move(Module), std::move(Context));
+    // Calculate strides using the existing stride generation logic
+    std::unordered_map<ValGroup, StrideInfo> val2stride;
+    llvm::Value* running_stride = builder.getInt64(1);
+    
+    for(auto it = output_allocation_domain.rbegin(); it != output_allocation_domain.rend(); ++it) {
+        auto iter_domain = *it;
+        if(iter_domain->getParallelType() == ParallelType::DIDx) {
+            continue;
+        }
+        generate_stride_llvm_ir(iter_domain->as<Val>(), val2stride, builder, boundary_vals, running_stride, graph);
+    }
+
+    // Store calculated strides
+    for(size_t i = 0; i < output_vals.size(); i++) {
+        llvm::Value* stride_ptr = builder.CreateGEP(
+            int64Ty,
+            strides_array,
+            builder.getInt64(i)
+        );
+        llvm::Value* stride_val = val2stride[graph.toGroup(output_vals[i])].llvm_stride;
+        builder.CreateStore(stride_val, stride_ptr);
+    }
+
+    // Declare at::empty_strided function
+    std::vector<llvm::Type*> empty_strided_args = {
+        llvm::PointerType::getUnqual(int64Ty),  // sizes array
+        int64Ty,     // sizes length
+        llvm::PointerType::getUnqual(int64Ty),  // strides array
+        int64Ty,     // strides length
+        llvm::PointerType::getUnqual(int64Ty)   // options (at::TensorOptions)
+    };
+    
+    llvm::FunctionType* empty_strided_type = llvm::FunctionType::get(
+        tensorTy,  // return type (at::Tensor as opaque pointer)
+        empty_strided_args,
+        false
+    );
+    
+    llvm::Function* empty_strided_func = llvm::Function::Create(
+        empty_strided_type,
+        llvm::Function::ExternalLinkage,
+        "at::empty_strided",
+        Module.get()
+    );
+
+    // Create default tensor options
+    llvm::Value* options = llvm::Constant::getNullValue(llvm::PointerType::getUnqual(int64Ty));
+
+    // Call at::empty_strided
+    std::vector<llvm::Value*> call_args = {
+        sizes_array,
+        builder.getInt64(output_logical_domain.size()),
+        strides_array,
+        builder.getInt64(output_logical_domain.size()),
+        options
+    };
+    
+    llvm::Value* tensor = builder.CreateCall(empty_strided_func, call_args, "tensor");
+    
+    // Return the allocated tensor
+    builder.CreateRet(tensor);
+    
+    return llvm::orc::ThreadSafeModule(std::move(Module), std::move(Context));
 }
 
 template llvm::orc::ExecutorAddr nvfuser::ExitOnErr<llvm::orc::ExecutorAddr>(llvm::Expected<llvm::orc::ExecutorAddr> &&E);
@@ -893,8 +892,17 @@ void HostIrLlvmJit::compile(const hir::HostIrContainer* container) {
     }
 
     // Look up the function pointer
-    allocation_func = ExitOnErr(pimpl_->jit->lookup(function_name)).toPtr<AllocationFunc>();
+    auto addr = ExitOnErr(pimpl_->jit->lookup(function_name));
+    using RawFuncType = at::Tensor (*)(const std::vector<at::Tensor>&);
+    auto raw_func = addr.toPtr<RawFuncType>();
+    allocation_func = std::function<at::Tensor(const std::vector<at::Tensor>&)>(raw_func);
+    pimpl_->compiled_functions[output_tv] = allocation_func;
   }
+}
+
+at::Tensor HostIrLlvmJit::allocate(const TensorView* output_tv) const {
+  auto& allocation_func = pimpl_->compiled_functions[output_tv];
+  return allocation_func(input_tensors_);
 }
 
 void HostIrLlvmJit::setInputTensor(const at::Tensor& input_tensor) {
@@ -918,149 +926,3 @@ bool HostIrLlvmJit::isCompiled(const TensorView* output_tv) const {
 
 } // namespace nvfuser
 
-llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
-    const std::string& module_name,
-    const std::string& function_name,
-    const std::vector<IterDomain*>& input_logical_domain,
-    const std::vector<IterDomain*>& output_logical_domain,
-    const std::vector<IterDomain*>& output_allocation_domain,
-    Fusion& fusion) {
-    
-    auto Context = std::make_unique<llvm::LLVMContext>();
-    auto* ctx = Context.get();
-    auto Module = std::make_unique<llvm::Module>(module_name, *ctx);
-    llvm::IRBuilder<> builder(*ctx);
-    
-    // Create function type: at::Tensor* (*)(int64_t, int64_t, ...)
-    std::vector<llvm::Type*> param_types(input_logical_domain.size(), llvm::Type::getInt64Ty(*ctx));
-    llvm::Type* return_type = llvm::Type::getInt8PtrTy(*ctx); // at::Tensor as opaque pointer
-    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
-    
-    // Create the function
-    llvm::Function* func = llvm::Function::Create(
-        func_type,
-        llvm::Function::ExternalLinkage,
-        function_name,
-        Module.get()
-    );
-    
-    // Create entry block
-    llvm::BasicBlock* entry = llvm::BasicBlock::Create(*ctx, "entry", func);
-    builder.SetInsertPoint(entry);
-    
-    // Create alloca for each argument
-    std::vector<llvm::Value*> arg_allocas;
-    for (auto& arg : func->args()) {
-        llvm::AllocaInst* alloca = builder.CreateAlloca(arg.getType(), nullptr, arg.getName());
-        builder.CreateStore(&arg, alloca);
-        arg_allocas.push_back(alloca);
-    }
-
-    // Initialize the id model and val graph
-    IdModel id_model(&fusion);
-    const ValGraph& graph = id_model.buildExactGraph();
-    std::unordered_map<int, Val*> boundary_vals;
-    std::unordered_map<ValGroup, llvm::Value*> val2llvm_val;
-
-    // Initialize input values
-    std::vector<Val*> input_vals = domain2vals(input_logical_domain);
-    for(size_t i = 0; i < input_logical_domain.size(); i++) {
-        boundary_vals[i] = input_vals[i];
-        val2llvm_val[graph.toGroup(input_vals[i])] = builder.CreateLoad(
-            llvm::Type::getInt64Ty(ctx),
-            arg_allocas[i]
-        );
-    }
-
-    // Generate shape LLVM IR
-    generate_all_shape_llvm_ir(graph, input_logical_domain, output_logical_domain, val2llvm_val, boundary_vals, builder);
-
-    // Create arrays for sizes and strides
-    llvm::Value* sizes_array = builder.CreateAlloca(
-        llvm::Type::getInt64Ty(ctx),
-        builder.getInt64(output_logical_domain.size()),
-        "sizes_array"
-    );
-    
-    llvm::Value* strides_array = builder.CreateAlloca(
-        llvm::Type::getInt64Ty(ctx),
-        builder.getInt64(output_logical_domain.size()),
-        "strides_array"
-    );
-
-    // Store calculated sizes
-    std::vector<Val*> output_vals = domain2vals(output_logical_domain);
-    for(size_t i = 0; i < output_vals.size(); i++) {
-        llvm::Value* size_ptr = builder.CreateGEP(
-            llvm::Type::getInt64Ty(ctx),
-            sizes_array,
-            builder.getInt64(i)
-        );
-        llvm::Value* size_val = val2llvm_val[graph.toGroup(output_vals[i])];
-        builder.CreateStore(size_val, size_ptr);
-    }
-
-    // Calculate strides using the existing stride generation logic
-    std::unordered_map<ValGroup, StrideInfo> val2stride;
-    llvm::Value* running_stride = builder.getInt64(1);
-    
-    for(auto it = output_allocation_domain.rbegin(); it != output_allocation_domain.rend(); ++it) {
-        auto iter_domain = *it;
-        if(iter_domain->getParallelType() == ParallelType::DIDx) {
-            continue;
-        }
-        generate_stride_llvm_ir(it, val2stride, builder, boundary_vals, running_stride, graph);
-    }
-
-    // Store calculated strides
-    for(size_t i = 0; i < output_vals.size(); i++) {
-        llvm::Value* stride_ptr = builder.CreateGEP(
-            llvm::Type::getInt64Ty(ctx),
-            strides_array,
-            builder.getInt64(i)
-        );
-        llvm::Value* stride_val = val2stride[graph.toGroup(output_vals[i])].llvm_stride;
-        builder.CreateStore(stride_val, stride_ptr);
-    }
-
-    // Declare at::empty_strided function
-    std::vector<llvm::Type*> empty_strided_args = {
-        llvm::Type::getInt64PtrTy(ctx),  // sizes array
-        llvm::Type::getInt64Ty(ctx),     // sizes length
-        llvm::Type::getInt64PtrTy(ctx),  // strides array
-        llvm::Type::getInt64Ty(ctx),     // strides length
-        llvm::Type::getInt8PtrTy(ctx)    // options (at::TensorOptions)
-    };
-    
-    llvm::FunctionType* empty_strided_type = llvm::FunctionType::get(
-        llvm::Type::getInt8PtrTy(ctx),  // return type (at::Tensor as opaque pointer)
-        empty_strided_args,
-        false
-    );
-    
-    llvm::Function* empty_strided_func = llvm::Function::Create(
-        empty_strided_type,
-        llvm::Function::ExternalLinkage,
-        "at::empty_strided",
-        Module.get()
-    );
-
-    // Create default tensor options
-    llvm::Value* options = llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(ctx));
-
-    // Call at::empty_strided
-    std::vector<llvm::Value*> call_args = {
-        sizes_array,
-        builder.getInt64(output_logical_domain.size()),
-        strides_array,
-        builder.getInt64(output_logical_domain.size()),
-        options
-    };
-    
-    llvm::Value* tensor = builder.CreateCall(empty_strided_func, call_args, "tensor");
-    
-    // Return the allocated tensor
-    builder.CreateRet(tensor);
-    
-    return llvm::orc::ThreadSafeModule(std::move(Module), std::move(Context));
-}
