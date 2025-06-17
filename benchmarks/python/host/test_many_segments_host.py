@@ -14,6 +14,7 @@ def many_matmul_fusion(fd: FusionDefinition) -> None:
     y = fd.define_tensor(
         shape=[-1, -1], contiguity=[True, True], dtype=DataType.Float, is_cpu=False
     )
+    print("Defined tensors:", x, y)  # Print defined tensors
     a = fd.ops.add(x, y)
     for _ in range(5):
         a_transpose = fd.ops.permute(a, [1, 0])

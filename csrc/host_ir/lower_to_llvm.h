@@ -13,8 +13,35 @@ namespace nvfuser {
 
 class HostIrLlvmJit {
  public:
-  // Constructor initializes the JIT
-  explicit HostIrLlvmJit(int num_threads = 0);
+  // Get singleton instance
+  static HostIrLlvmJit& getInstance(int num_threads = 4);
+
+  // Delete copy constructor and assignment operator
+  HostIrLlvmJit(const HostIrLlvmJit&) = delete;
+  HostIrLlvmJit& operator=(const HostIrLlvmJit&) = delete;
+
+  // Compile a fusion associated with the given output TensorView.
+  void compile(const HostIrContainer* container);
+
+  // Allocate an output tensor with the given input tensors
+  at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);
+
+  // Infer the shape and stride of the output tensor
+  void inferShapeAndStride(std::vector<int64_t>& result_shape, std::vector<int64_t>& result_stride, const TensorView* output_tv);
+
+  // Set the input tensors
+  void setInputTensor(const at::Tensor& input_tensor);
+
+  // If input tensor is set, return true
+  bool isInputTensorSet() const;
+
+  // If compiled, return true
+  bool isCompiled(const TensorView* output_tv) const;
+
+ private:
+  // Private constructor
+  explicit HostIrLlvmJit(int num_threads = 4);
+  
   // Destructor is required for PIMPL with std::unique_ptr
   ~HostIrLlvmJit();
 
@@ -22,19 +49,9 @@ class HostIrLlvmJit {
   HostIrLlvmJit(HostIrLlvmJit&&) noexcept;
   HostIrLlvmJit& operator=(HostIrLlvmJit&&) noexcept;
 
-  // Disable copy
-  HostIrLlvmJit(const HostIrLlvmJit&) = delete;
-  HostIrLlvmJit& operator=(const HostIrLlvmJit&) = delete;
-
-  // Compile a fusion associated with the given output TensorView.
-  void compile(TensorView* output_tv);
-
-  // Execute the compiled functions to allocate and return an output tensor.
-  at::Tensor allocateOutputTensor(const std::vector<at::Tensor>& input_tensors);
-
- private:
   struct LlvmJitImpl; // The PIMPL forward declaration
   std::unique_ptr<LlvmJitImpl> pimpl_;
+  std::vector<at::Tensor> input_tensors_; // Changed from static to member variable
 };
 
 } // namespace nvfuser

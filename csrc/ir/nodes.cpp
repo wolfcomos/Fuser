@@ -2326,6 +2326,7 @@ std::string ViewOp::toInlineString(int indent_size) const {
   NVF_CHECK(false, "Tensor op can not be printed inline");
 }
 
+
 std::vector<PolymorphicValue> ViewOp::evaluate(
     const ExpressionEvaluator& ee,
     const std::vector<PolymorphicValue>& inputs) const {

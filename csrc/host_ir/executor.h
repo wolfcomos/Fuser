@@ -17,7 +17,7 @@
 #include <runtime/executor_abstract.h>
 #include <runtime/executor_params.h>
 #include <runtime/fusion_executor_cache.h>
-
+#include <host_ir/lower_to_llvm.h>
 #include <c10/cuda/CUDAStream.h>
 
 namespace nvfuser {

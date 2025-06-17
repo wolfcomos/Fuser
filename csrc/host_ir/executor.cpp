@@ -33,6 +33,8 @@
 #include <runtime/fusion_kernel_runtime.h>
 #include <tensor_metadata.h>
 
+#define USE_LLVM_JIT
+
 namespace nvfuser {
 
 HostIrExecutor::HostIrExecutor(
@@ -233,6 +235,9 @@ KernelArgumentHolder HostIrEvaluator::runWithInputs(
 
   NVF_ERROR_EQ(std::ssize(container_->inputs()), args.size());
   for (auto&& [in_val, arg] : zip(container_->inputs(), args)) {
+    if (in_val->isA<TensorView>()) {
+      HostIrLlvmJit::getInstance().setInputTensor(arg.as<at::Tensor>());
+    }
     expr_evaluator_.bind(in_val, arg);
   }
 
@@ -256,11 +261,15 @@ KernelArgumentHolder HostIrEvaluator::runWithInput(
   expr_evaluator_ = ExpressionEvaluator();
   expr_evaluator_.bind("numberOfStreams", params_.number_of_streams);
   expr_evaluator_.bind("rank", communicator_->deviceId());
+
   // process input values, converting IValue to PolymorphicValue
   for (const auto& [val, pvalue] : val_to_PValue) {
     expr_evaluator_.bind(val, pvalue);
+    #ifdef USE_LLVM_JIT
+    std::cout << "input tensor" << std::endl;
+    HostIrLlvmJit::getInstance().setInputTensor(pvalue.as<at::Tensor>());
+    #endif
   }
-
   // Interpret each instruction in an "eager" way by iterate over the Host Ir
   // Container's top level expression list
   for (auto expr : container_->topLevelExprs()) {
@@ -730,23 +739,31 @@ void HostIrEvaluator::handle(LoadStoreOp* load_store_op) {
   }
 }
 
+
 void HostIrEvaluator::handle(kir::Allocate* allocate) {
   NVF_ERROR(
       allocate->buffer()->isA<TensorView>(),
       "Allocation must be on a TensorView but got ",
       allocate->buffer());
   TensorView* tv = allocate->buffer()->as<TensorView>();
+  
   if (expr_evaluator_.isKnown(tv)) {
     return;
   }
-  GlobalBufferInfo info =
-      getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
   c10::Device device =
-      communicator_ ? communicator_->device() : at::Device("cuda:0");
+  communicator_ ? communicator_->device() : at::Device("cuda:0");
+  std::vector<int64_t> result_shape;
+  std::vector<int64_t> result_stride;
+  GlobalBufferInfo info =
+    getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
+    result_shape = info.shape_info.logical_sizes;
+    result_stride = info.shape_info.logical_strides;
+  auto dtype =
+      (tv->dtype() == DataType::Index ? PrimDataType::Int : tv->dtype());
   auto tensor = at::native::empty_strided_cuda(
-      info.shape_info.logical_sizes,
-      info.shape_info.logical_strides,
-      info.type,
+      result_shape,
+      result_stride,
+      data_type_to_aten(dtype),
       c10::nullopt,
       device,
       c10::nullopt);

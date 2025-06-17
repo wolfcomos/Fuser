@@ -348,6 +348,10 @@ void PrecomputedValues::bindTensorMetaData(
     const at::Tensor& tensor) {
   const auto logical_domain =
       TensorDomain::noReductions(tv->getLogicalDomain());
+  std::cout << "logical_domain: " << logical_domain.size() << std::endl;
+  std::cout << "tensor.dim(): " << tensor.dim() << std::endl;
+  std::cout << "tv: " << tv->toString() << std::endl;
+  tv->printTransforms();
   NVF_ERROR(
       tensor.dim() == static_cast<int64_t>(logical_domain.size()),
       "Something went wrong configuring launch. Inputs do not match.");

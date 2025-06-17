@@ -557,6 +557,10 @@ void FusionKernelRuntime::compileFusionParallel(KernelArgumentHolder args) {
 
     hir_pass::InsertDeallocations().runPass(hic.get());
 
+    for(auto* val : hic->outputs()){
+      HostIrLlvmJit::getInstance().compile(val->as<TensorView>());
+    }
+
     hie_ = std::make_unique<hir::HostIrEvaluator>(
         std::move(hic), &Communicator::getInstance());
   }

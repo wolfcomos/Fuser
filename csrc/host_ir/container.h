@@ -10,6 +10,7 @@
 #include <fusion.h>
 #include <host_ir/host_ir.h>
 #include <runtime/executor.h>
+#include <host_ir/lower_to_llvm.h>
 
 namespace nvfuser {
 

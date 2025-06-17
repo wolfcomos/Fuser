@@ -47,6 +47,55 @@ void print_iter_domain(const std::vector<IterDomain*>& iter_domain, const std::s
   std::cout << std::endl;
 }
 
+// Test launch kernel with HostIrLLVMJit against original HostIrEvaluator
+// We want to set a flag to enable/disable the launch kernel with HostIrLLVMJit at dispatch level in LaunchKernel Executor
+TEST_F(HostIrLLVMTest, LaunchKernel) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+  TensorView* in = makeSymbolicTensor(2);
+  fusion.addInput(in);
+
+  TensorView* out = set(in);
+  fusion.addOutput(out);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({32, 32}, options);
+  auto ke = std::make_unique<KernelExecutor>();
+  ke->setGroupId(0);
+  ke->compile(&fusion, {t0});
+
+  auto hic = std::make_unique<HostIrContainer>(1);
+  FusionGuard::setCurFusion(hic.get());
+
+  hic->addKernelExecutor(std::move(ke));
+
+  IrCloner ir_cloner(hic.get());
+  auto hic_in = ir_cloner.clone(in);
+  auto hic_out = ir_cloner.clone(out);
+
+  hic->addInput(hic_in);
+  hic->addOutput(hic_out);
+
+  auto allocate = IrBuilder::create<kir::Allocate>(hic_out, MemoryType::Global);
+  auto* cache_id = IrBuilder::create<NamedScalar>("cacheId", DataType::UInt64);
+  auto launch_kernel = IrBuilder::create<LaunchKernel>(
+      0,
+      LaunchParams(),
+      CompileParams(),
+      std::vector<Val*>{hic_in},
+      std::vector<Val*>{hic_out},
+      cache_id);
+
+  hic->pushBackTopLevelExprs(allocate);
+  hic->pushBackTopLevelExprs(launch_kernel);
+
+  HostIrEvaluator hie(std::move(hic));
+
+  auto outputs = hie.runWithInput({{hic_in, t0}});
+
+  EXPECT_TRUE(outputs[0].as<at::Tensor>().equal(t0));
+}
+
 TEST_F(HostIrLLVMTest, AllocationMergeSplit1) {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -65,15 +114,14 @@ TEST_F(HostIrLLVMTest, AllocationMergeSplit1) {
   // [N, H*W, C]
   tv1->setAllocationDomain(tv1->getLoopDomain(), {true, true, true});
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
 
   // Input Tensor
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({n1, n2, h*w*c}, options);
 
   // LLVM JIT Run Allocation
-  at::Tensor output_tensor = jit.allocateOutputTensor({t0});
+  at::Tensor output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -96,11 +144,10 @@ TEST_F(HostIrLLVMTest, AllocationMergeSplit2) {
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({i1, i2, i3, i4, i5}, options);
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(out);
+  HostIrLlvmJit::getInstance().compile(out);
 
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -125,11 +172,10 @@ TEST_F(HostIrLLVMTest, AllocationStrideInferReorder) {
   at::Tensor t0 = at::randn({i1, i2, i3, i4, i5}, options);
 
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(out);
+  HostIrLlvmJit::getInstance().compile(out);
 
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -168,11 +214,10 @@ TEST_F(HostIrLLVMTest, AllocationStrideInferBroadcast) {
   at::Tensor t0 = at::randn({N, H, W, C}, options);
   at::Tensor t1 = at::randn({N, H, W}, options);
   // LLVM JIT Compile
-  HostIrLlvmJit jit(4);
-  jit.compile(tv4);
+  HostIrLlvmJit::getInstance().compile(tv4);
   tv4->setAllocationDomain(tv4->getLoopDomain(), {true, true, true, true});
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0, t1});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0, t1});
 
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
@@ -198,10 +243,9 @@ TEST_F(HostIrLLVMTest, AllocationLogicalShapeInfer) {
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({N, H, W, C}, options);
 
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
   // LLVM JIT Run Allocation
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
   // Print Output Tensor Info
   print_tensor_info(output_tensor);
 }
@@ -224,11 +268,10 @@ TEST_F(HostIrLLVMTest, AllocationDIDInit) {
   fusion->addInput(tv0);
   fusion->addOutput(tv1);
 
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({5, d * 3}, options);
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
   print_tensor_info(output_tensor);
   EXPECT_EQ(output_tensor.sizes(), at::IntArrayRef({5, 3}));
   EXPECT_EQ(output_tensor.strides(), at::IntArrayRef({3, 1}));
@@ -254,11 +297,10 @@ TEST_F(HostIrLLVMTest, AllocationDIDSplit) {
   fusion->addInput(tv0);
   fusion->addOutput(tv1);
 
-  HostIrLlvmJit jit(4);
-  jit.compile(tv1);
+  HostIrLlvmJit::getInstance().compile(tv1);
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({5, d * 3, d}, options);
-  auto output_tensor = jit.allocateOutputTensor({t0});
+  auto output_tensor = HostIrLlvmJit::getInstance().allocateOutputTensor({t0});
   print_tensor_info(output_tensor);
   EXPECT_EQ(output_tensor.sizes(), at::IntArrayRef({5, 1, d}));
   EXPECT_EQ(output_tensor.strides(), at::IntArrayRef({d, d, 1}));
