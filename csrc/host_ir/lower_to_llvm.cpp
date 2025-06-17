@@ -42,7 +42,7 @@ Helper Data Structures & Functions
 
 */
 
-using AllocationFunc = std::function<llvm::Function*(llvm::Module*, const std::string&, size_t num_dims)>;
+using AllocationFunc = std::function<at::Tensor(const std::vector<at::Tensor>&)>;
 
 // Dependency graph entry for the stride inference
 struct StrideInfo {
@@ -812,7 +812,7 @@ struct HostIrLlvmJit::LlvmJitImpl {
   std::unique_ptr<llvm::orc::LLJIT> jit;
     
   // Map to store compiled functions for each output tensor
-  std::unordered_map<const TensorView*, CompiledFunctions> compiled_functions;
+  std::unordered_map<const TensorView*, AllocationFunc> compiled_functions;
 };
 
 // Constructor implementation
@@ -830,7 +830,7 @@ HostIrLlvmJit::~HostIrLlvmJit() = default;
 HostIrLlvmJit::HostIrLlvmJit(HostIrLlvmJit&&) noexcept = default;
 HostIrLlvmJit& HostIrLlvmJit::operator=(HostIrLlvmJit&&) noexcept = default;
 
-void HostIrLlvmJit::compile(const HostIrContainer* container) {
+void HostIrLlvmJit::compile(const hir::HostIrContainer* container) {
   FUSER_PERF_SCOPE("HostIrLlvmJit::compile");
 
   for (auto* out_val : container->outputs()) {
@@ -872,11 +872,10 @@ void HostIrLlvmJit::compile(const HostIrContainer* container) {
     }
 
     auto output_logical_domain = output_tv->getLogicalDomain();
+    auto output_allocation_domain = output_tv->getMaybeAllocationDomain();
 
     // Create new entry in the map for this output_tv
-    auto& funcs = pimpl_->compiled_functions[output_tv];
-    funcs.module_name = module_name;
-    funcs.function_name = function_name;
+    auto& allocation_func = pimpl_->compiled_functions[output_tv];
 
     // Generate and add the tensor allocation module
     auto TSM_inference = generate_tensor_allocation_module(
@@ -894,7 +893,7 @@ void HostIrLlvmJit::compile(const HostIrContainer* container) {
     }
 
     // Look up the function pointer
-    funcs.inference_fn = ExitOnErr(pimpl_->jit->lookup(function_name)).toPtr<InferenceFunc>();
+    allocation_func = ExitOnErr(pimpl_->jit->lookup(function_name)).toPtr<AllocationFunc>();
   }
 }
 

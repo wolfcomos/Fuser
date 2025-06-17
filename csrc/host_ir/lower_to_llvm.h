@@ -31,7 +31,7 @@ class HostIrLlvmJit {
   HostIrLlvmJit& operator=(const HostIrLlvmJit&) = delete;
 
   // Compile a fusion associated with the given output TensorView.
-  void compile(const HostIrContainer* container);
+  void compile(const hir::HostIrContainer* container);
 
   // Set the input tensors
   void setInputTensor(const at::Tensor& input_tensor);
