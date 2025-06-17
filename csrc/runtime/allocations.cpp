@@ -667,10 +667,10 @@ std::pair<std::vector<int64_t>, std::vector<int64_t>> inferShapeOfOutput(
   // HostIrLlvmJit::getInstance().compile(tv);
   // tv->printTransforms();
   // std::cout << tv->toString() << std::to_string(reinterpret_cast<uintptr_t>(tv)) << std::endl;
-  if (HostIrLlvmJit::getInstance().isInputTensorSet() && HostIrLlvmJit::getInstance().isCompiled(tv)) {
-    HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride, tv);
-    return {result_shape, result_stride};
-  }
+  // if (HostIrLlvmJit::getInstance().isInputTensorSet() && HostIrLlvmJit::getInstance().isCompiled(tv)) {
+  //   HostIrLlvmJit::getInstance().inferShapeAndStride(result_shape, result_stride, tv);
+  //   return {result_shape, result_stride};
+  // }
   // std::cout << "llvm_shape: " << result_shape << std::endl;
   // std::cout << "llvm_stride: " << result_stride << std::endl;
   auto size_stride = inferAllocationShape(tv, expr_eval);
