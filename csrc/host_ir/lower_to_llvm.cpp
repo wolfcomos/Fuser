@@ -91,13 +91,13 @@ int isSameToInputDomain(std::unordered_map<int, Val*>& boundary_vals, Val* curre
 }
 
 // Helper function to check if the current iter domain is alias to the input iter domain
-int mapToInputDomain(std::unordered_map<int, Val*>& boundary_vals, Val* current_domain, const ValGraph& exact_graph){
+int mapToInputDomain(std::unordered_map<int, Val*>& boundary_vals, Val* current_domain){
   int input_domain_index = isSameToInputDomain(boundary_vals, current_domain);
   if(input_domain_index != -1){
     return input_domain_index;
   }
   for(auto boundary_val : boundary_vals){
-    if(exact_graph.disjointValSets().strictAreMapped(current_domain, boundary_val.second)){
+    if(boundary_val.second->as<IterDomain>()->extent()->sameAs(current_domain->as<IterDomain>()->extent())){
       return boundary_val.first;
     }
   }
@@ -121,8 +121,8 @@ void generate_shape_llvm_ir(Expr* expr, llvm::IRBuilder<>& builder, std::unorder
     auto* merge_input_inner_val = merge_expr->inner()->as<Val>();
     auto* merge_output_val = merge_expr->outputs()[0]->as<Val>();
 
-    int input_outer_potential_index = mapToInputDomain(boundary_vals, merge_input_outer_val, graph);
-    int input_inner_potential_index = mapToInputDomain(boundary_vals, merge_input_inner_val, graph);
+    int input_outer_potential_index = mapToInputDomain(boundary_vals, merge_input_outer_val);
+    int input_inner_potential_index = mapToInputDomain(boundary_vals, merge_input_inner_val);
     llvm::Value* input_outer_llvm_val = nullptr;
     llvm::Value* input_inner_llvm_val = nullptr;
 
@@ -150,7 +150,7 @@ void generate_shape_llvm_ir(Expr* expr, llvm::IRBuilder<>& builder, std::unorder
     auto* split_output_outer_val = split_expr->outer()->as<Val>();
     auto* split_output_inner_val = split_expr->inner()->as<Val>();
 
-    int input_potential_index = mapToInputDomain(boundary_vals, split_input_val, graph);
+    int input_potential_index = mapToInputDomain(boundary_vals, split_input_val);
     llvm::Value* input_llvm_val = nullptr;
     if(input_potential_index != -1){
       input_llvm_val = val2llvm[graph.toGroup(boundary_vals[input_potential_index])]; 
@@ -256,7 +256,7 @@ std::unordered_map<int, Val*>& boundary_vals, llvm::IRBuilder<>& builder, const 
       continue;
     }
     if(auto* split = current_val->definition()->as<Split>()){
-      int potential_index = mapToInputDomain(boundary_vals, split->in(), graph);
+      int potential_index = mapToInputDomain(boundary_vals, split->in());
       if(potential_index != -1){
         if(val2stride[graph.toGroup(boundary_vals[potential_index])].llvm_extent != nullptr){
           val2stride[graph.toGroup(boundary_vals[potential_index])].llvm_extent = builder.CreateUDiv(val2stride[graph.toGroup(boundary_vals[potential_index])].llvm_extent, did_val, "did_mul");
@@ -285,7 +285,7 @@ TODO: Need to implement this function
 */
 
 int findMostUpmostParent(Val* val, bool is_inner_path, std::unordered_map<int, Val*>& boundary_vals, const ValGraph& graph) {
-  int potential_index = mapToInputDomain(boundary_vals, val, graph);
+  int potential_index = mapToInputDomain(boundary_vals, val);
   if(potential_index != -1){
     return potential_index;
   }
@@ -489,7 +489,7 @@ void generate_stride_llvm_ir(
     }
 
     // Check if the current val is a boundary val
-    int cur_val_potential_index = mapToInputDomain(boundary_vals, current_val_to_process, graph);
+    int cur_val_potential_index = mapToInputDomain(boundary_vals, current_val_to_process);
     if(cur_val_potential_index != -1){
       // TODO: If the iter domain is a broadcast domain, then we have multiple inputs values pointing to the same valgroup
       NVF_ERROR(!boundary_vals[cur_val_potential_index]->as<IterDomain>()->isBroadcast(), "LLVM Lowering Error: Broadcast domain is not supported in stride inference");
@@ -521,8 +521,8 @@ void generate_stride_llvm_ir(
         auto* merge_expr = def_expr->as<Merge>();
         auto* input_inner_val = merge_expr->inner()->as<Val>();
         auto* input_outer_val = merge_expr->outer()->as<Val>();
-        int input_inner_potential_index = mapToInputDomain(boundary_vals, input_inner_val, graph);
-        int input_outer_potential_index = mapToInputDomain(boundary_vals, input_outer_val, graph);
+        int input_inner_potential_index = mapToInputDomain(boundary_vals, input_inner_val);
+        int input_outer_potential_index = mapToInputDomain(boundary_vals, input_outer_val);
         if(!verify(merge_expr->as<Expr>(), boundary_vals, graph)){
           NVF_ERROR(false, "LLVM Lowering Error: Invalid merge expr: " + merge_expr->toString());
         }
@@ -568,7 +568,7 @@ void generate_stride_llvm_ir(
         auto* input_val = split_expr->in()->as<Val>();
         auto* output_inner_val = split_expr->inner()->as<Val>();
         auto* output_outer_val = split_expr->outer()->as<Val>();
-        int input_val_potential_index = mapToInputDomain(boundary_vals, input_val, graph);
+        int input_val_potential_index = mapToInputDomain(boundary_vals, input_val);
 
         if(input_val_potential_index != -1 && val2stride_map[graph.toGroup(boundary_vals[input_val_potential_index])].llvm_stride == nullptr){
           val2stride_map[graph.toGroup(boundary_vals[input_val_potential_index])].llvm_stride = running_stride_product;
@@ -706,7 +706,7 @@ llvm::orc::ThreadSafeModule generate_tensor_allocation_module(
     // Store calculated sizes
     std::vector<Val*> output_vals = domain2vals(output_logical_domain);
     for(size_t i = 0; i < output_vals.size(); i++) {
-      int output_val_potential_index = mapToInputDomain(boundary_vals, output_vals[i], graph);
+      int output_val_potential_index = mapToInputDomain(boundary_vals, output_vals[i]);
       if(output_val_potential_index != -1){
         llvm::Value* size_ptr = builder.CreateGEP(
             int64Ty,
