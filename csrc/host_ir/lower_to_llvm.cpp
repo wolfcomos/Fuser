@@ -828,6 +828,18 @@ HostIrLlvmJit::HostIrLlvmJit(int num_threads) : pimpl_(new LlvmJitImpl) {
   llvm::InitializeNativeTargetAsmPrinter();
   pimpl_->jit = ExitOnErr(
       llvm::orc::LLJITBuilder().setNumCompileThreads(num_threads).create());
+  std::cout << "LLJIT created" << std::endl;
+  auto &jd = pimpl_->jit->getMainJITDylib();
+  auto mangle = llvm::orc::MangleAndInterner(jd.getExecutionSession(), pimpl_->jit->getDataLayout());
+  auto s = [](llvm::orc::MangleAndInterner interner) {
+      llvm::orc::SymbolMap symbolMap;
+      symbolMap[interner("at::empty_strided")] = {
+          llvm::pointerToJITTargetAddress(&at::empty_strided),
+          llvm::JITSymbolFlags(),
+      };
+      return llvm::orc::absoluteSymbols(symbolMap);
+  }(mangle);
+  ExitOnError(jd.define(s));
 }
 
 // The destructor must be defined here where LlvmJitImpl is a complete type.
