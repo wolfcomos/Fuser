@@ -39,7 +39,17 @@
 
 namespace nvfuser {
 
+/*
+input: input buffer, input buffer length, options, 
+output: at::Tensor result
+*/
 using allocate_fn = std::function<void*(int64_t*, int64_t, void*)>;
+
+/*
+input: cache id
+output: KernelArgumentHolder
+*/ 
+using launch_kernel_fn = std::function<KernelArgumentHolder(int64_t)>;
 
 // PIMPL implementation for HostIrJit
 struct HostIrJit::LlvmJitImpl {
@@ -69,7 +79,99 @@ inline void ExitOnErr(llvm::Error&& Err) {
   }
 }
 
-// Generate a function that calls at::empty_strided or at::empty
+// Generate a function for LaunchKernel node
+void generateLaunchKernelFunc(
+    const hir::LaunchKernel* launch_kernel,
+    llvm::Module* mod,
+    llvm::orc::MangleAndInterner& mangler) {
+  llvm::LLVMContext& context = mod->getContext();
+  llvm::IRBuilder<> builder(context);
+
+  std::string func_name = "launch_kernel_" +
+          std::to_string(reinterpret_cast<uintptr_t>(launch_kernel));
+  
+  // Since we registered the wrapper functions with these exact names,
+  // we can look them up directly without mangling
+  std::string constructor_name = "KernelArgumentHolder::KernelArgumentHolder";
+  std::string set_cache_name = "KernelArgumentHolder::setCacheId";
+  std::string set_device_name = "KernelArgumentHolder::setDeviceIndex";
+  
+  // Look up functions using the registered names
+  llvm::Function* constructor_func = mod->getFunction(constructor_name);
+  if (!constructor_func) {
+    // Create function declaration for constructor
+    llvm::FunctionType* ctor_type = llvm::FunctionType::get(
+      llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)), // return KernelArgumentHolder*
+      {}, // no parameters for default constructor
+      false
+    );
+    constructor_func = llvm::Function::Create(
+      ctor_type, llvm::Function::ExternalLinkage, constructor_name, mod
+    );
+  }
+  
+  llvm::Function* set_cache_func = mod->getFunction(set_cache_name);
+  if (!set_cache_func) {
+    // Create function declaration for member function
+    std::vector<llvm::Type*> param_types = {
+      llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)), // this pointer
+      llvm::Type::getInt64Ty(context)    // size_t parameter
+    };
+    llvm::FunctionType* set_cache_type = llvm::FunctionType::get(
+      llvm::Type::getVoidTy(context), param_types, false
+    );
+    set_cache_func = llvm::Function::Create(
+      set_cache_type, llvm::Function::ExternalLinkage, set_cache_name, mod
+    );
+  }
+  
+  llvm::Function* set_device_func = mod->getFunction(set_device_name);
+  if (!set_device_func) {
+    // Create function declaration for setDeviceIndex
+    std::vector<llvm::Type*> param_types = {
+      llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)), // this pointer
+      llvm::Type::getInt64Ty(context)    // device index parameter
+    };
+    llvm::FunctionType* set_device_type = llvm::FunctionType::get(
+      llvm::Type::getVoidTy(context), param_types, false
+    );
+    set_device_func = llvm::Function::Create(
+      set_device_type, llvm::Function::ExternalLinkage, set_device_name, mod
+    );
+  }
+  
+  // Create the main function
+  llvm::FunctionType* main_func_type = llvm::FunctionType::get(
+    llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)), // return KernelArgumentHolder*
+    {llvm::Type::getInt64Ty(context), llvm::Type::getInt64Ty(context)}, // cache_id, device_index
+    false
+  );
+  
+  llvm::Function* main_func = llvm::Function::Create(
+    main_func_type, llvm::Function::ExternalLinkage, func_name, mod
+  );
+  
+  llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", main_func);
+  builder.SetInsertPoint(entry);
+  
+  // Get function arguments
+  llvm::Value* cache_id_arg = main_func->getArg(0);
+  llvm::Value* device_index_arg = main_func->getArg(1);
+  
+  // Create KernelArgumentHolder
+  llvm::Value* args_ptr = builder.CreateCall(constructor_func, {});
+  
+  // Set cache ID
+  builder.CreateCall(set_cache_func, {args_ptr, cache_id_arg});
+  
+  // Set device index
+  builder.CreateCall(set_device_func, {args_ptr, device_index_arg});
+  
+  // Return the args pointer
+  builder.CreateRet(args_ptr);
+}
+
+// Generate a function for allocate node
 void generateAllocateFunc(
     const kir::Allocate* allocate,
     llvm::Module* mod) {
@@ -148,6 +250,9 @@ void compile(const hir::HostIrContainer* container, llvm::orc::LLJIT* jit, std::
           std::to_string(reinterpret_cast<uintptr_t>(container)),
       *ctx);
   std::unordered_map<const kir::Allocate*, std::string> allocate_func_names;
+  llvm::orc::JITDylib& dest_dynamic_lib = jit->getMainJITDylib();
+  llvm::orc::MangleAndInterner mangler(
+      dest_dynamic_lib.getExecutionSession(), jit->getDataLayout());
   for (auto expr : container->topLevelExprs()) {
     if (auto allocate = dynamic_cast<const kir::Allocate*>(expr)) {
       // Generate a unique function name for this allocate
@@ -155,6 +260,9 @@ void compile(const hir::HostIrContainer* container, llvm::orc::LLJIT* jit, std::
       // Store the mapping from allocate to function name
       allocate_func_names[allocate] = "create_tensor_from_sizes_" +
           std::to_string(reinterpret_cast<uintptr_t>(allocate));
+    }
+    else if (auto launch_kernel = dynamic_cast<const hir::LaunchKernel*>(expr)) {
+      generateLaunchKernelFunc(launch_kernel, mod.get(), mangler);
     }
   }
 
@@ -177,7 +285,7 @@ HostIrJit::HostIrJit(hir::HostIrContainer* container, int num_threads) : pimpl_(
   pimpl_->jit = ExitOnErr(
       llvm::orc::LLJITBuilder().setNumCompileThreads(num_threads).create());
   llvm::orc::JITDylib& dest_dynamic_lib = pimpl_->jit->getMainJITDylib();
-  auto mangler = llvm::orc::MangleAndInterner(
+  llvm::orc::MangleAndInterner mangler(
       dest_dynamic_lib.getExecutionSession(), pimpl_->jit->getDataLayout());
   dest_dynamic_lib.addGenerator(
       ExitOnErr(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
@@ -213,6 +321,33 @@ HostIrJit::HostIrJit(hir::HostIrContainer* container, int num_threads) : pimpl_(
       empty_strided_addr, llvm::JITSymbolFlags::Exported);
   symbolMap[mangler("at::empty")] =
       llvm::orc::ExecutorSymbolDef(empty_addr, llvm::JITSymbolFlags::Exported);
+
+  // Register KernelArgumentHolder functions
+  void* constructor_func_ptr = reinterpret_cast<void*>(
+      +[]() -> KernelArgumentHolder* {
+        return new KernelArgumentHolder();
+      });
+
+  void* set_cache_func_ptr = reinterpret_cast<void*>(
+      +[](KernelArgumentHolder* self, size_t id) {
+        self->setCacheId(id);
+      });
+
+  void* set_device_func_ptr = reinterpret_cast<void*>(
+      +[](KernelArgumentHolder* self, int64_t device_index) {
+        self->setDeviceIndex(static_cast<int8_t>(device_index));
+      });
+
+  auto constructor_addr = llvm::orc::ExecutorAddr::fromPtr(constructor_func_ptr);
+  auto set_cache_addr = llvm::orc::ExecutorAddr::fromPtr(set_cache_func_ptr);
+  auto set_device_addr = llvm::orc::ExecutorAddr::fromPtr(set_device_func_ptr);
+
+  symbolMap[mangler("KernelArgumentHolder::KernelArgumentHolder")] = 
+      llvm::orc::ExecutorSymbolDef(constructor_addr, llvm::JITSymbolFlags::Exported);
+  symbolMap[mangler("KernelArgumentHolder::setCacheId")] = 
+      llvm::orc::ExecutorSymbolDef(set_cache_addr, llvm::JITSymbolFlags::Exported);
+  symbolMap[mangler("KernelArgumentHolder::setDeviceIndex")] = 
+      llvm::orc::ExecutorSymbolDef(set_device_addr, llvm::JITSymbolFlags::Exported);
 
   ExitOnErr(dest_dynamic_lib.define(llvm::orc::absoluteSymbols(symbolMap)));
   compile(container, pimpl_->jit.get(), pimpl_->allocate_funcs_);
