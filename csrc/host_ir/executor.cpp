@@ -197,6 +197,7 @@ HostIrEvaluator::HostIrEvaluator(
     Communicator* communicator,
     HostIrEvaluatorParams params)
     : container_(std::move(container)),
+      jit_(std::make_unique<HostIrJit>(container_.get(), 4)),
       communicator_(communicator),
       params_(params),
       expr_evaluator_(),
@@ -735,6 +736,9 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       getBufferInfos(expr_evaluator_, PrimDataType::Int, {tv}).at(0);
   c10::Device device =
       communicator_ ? communicator_->device() : at::Device("cuda:0");
+  if (jit_) {
+    expr_evaluator_.bind(tv, jit_->allocate(allocate, info.shape_info.logical_sizes));
+  } else {
   auto tensor = at::native::empty_strided_cuda(
       info.shape_info.logical_sizes,
       info.shape_info.logical_strides,
@@ -742,7 +746,8 @@ void HostIrEvaluator::handle(kir::Allocate* allocate) {
       c10::nullopt,
       device,
       c10::nullopt);
-  expr_evaluator_.bind(tv, tensor);
+    expr_evaluator_.bind(tv, tensor);
+  }
 }
 
 void HostIrEvaluator::handle(HirAliasSelect* hir_alias_select) {
