@@ -349,40 +349,80 @@ void HostIrEvaluator::handle(Synchronize* synchronize) {
   NVFUSER_CUDA_RT_SAFE_CALL(cudaEventDestroy(event));
 }
 
+// void HostIrEvaluator::handle(LaunchKernel* launch_kernel) {
+//   KernelArgumentHolder args;
+//   PolymorphicValue cache_id =
+//       expr_evaluator_.evaluate(launch_kernel->cacheId());
+//   if (!cache_id.is<std::monostate>()) {
+//     args.setCacheId(static_cast<size_t>(cache_id.as<int64_t>()));
+//   }
+//   for (auto& input : launch_kernel->inputs()) {
+//     args.push(getKnownConcreteValue(input));
+//   }
+
+//   // All output buffers are known already, pass them to the executor
+//   KernelArgumentHolder outputs;
+//   for (Val* output : launch_kernel->outputs()) {
+//     if (expr_evaluator_.isKnown(output)) {
+//       outputs.push(getKnownConcreteValue(output));
+//     }
+//   }
+
+//   NVF_ERROR_EQ(
+//       outputs.size(),
+//       std::ssize(launch_kernel->outputs()),
+//       "Not all outputs to the kernel were preallocated");
+
+//   args.setDeviceIndex();
+
+//   // run the compiled kernel
+//   container_->getKernelExecutor(launch_kernel->groupId())
+//       ->run(
+//           args,
+//           outputs,
+//           launch_kernel->launchParams(),
+//           launch_kernel->compileParams());
+// }
+
 void HostIrEvaluator::handle(LaunchKernel* launch_kernel) {
-  KernelArgumentHolder args;
-  PolymorphicValue cache_id =
-      expr_evaluator_.evaluate(launch_kernel->cacheId());
-  if (!cache_id.is<std::monostate>()) {
-    args.setCacheId(static_cast<size_t>(cache_id.as<int64_t>()));
+
+  PolymorphicValue cache_id_poly = expr_evaluator_.evaluate(launch_kernel->cacheId());
+  int64_t cache_id = 0;
+  if (!cache_id_poly.is<std::monostate>()) {
+    cache_id = static_cast<int64_t>(cache_id_poly.as<int64_t>());
   }
+
+  std::vector<at::Tensor> inputs;
   for (auto& input : launch_kernel->inputs()) {
-    args.push(getKnownConcreteValue(input));
+    inputs.push_back(getKnownConcreteValue(input).as<at::Tensor>());
   }
 
   // All output buffers are known already, pass them to the executor
-  KernelArgumentHolder outputs;
+  std::vector<at::Tensor> outputs;
   for (Val* output : launch_kernel->outputs()) {
     if (expr_evaluator_.isKnown(output)) {
-      outputs.push(getKnownConcreteValue(output));
+      outputs.push_back(getKnownConcreteValue(output).as<at::Tensor>());
     }
   }
 
+  auto result = jit_->launchKernel(launch_kernel, cache_id, inputs, outputs);
+  auto& kah_args = result.args;
+  auto& kah_outputs = result.outputs;
+
   NVF_ERROR_EQ(
-      outputs.size(),
+      kah_outputs.size(),
       std::ssize(launch_kernel->outputs()),
       "Not all outputs to the kernel were preallocated");
-
-  args.setDeviceIndex();
-
+      
   // run the compiled kernel
   container_->getKernelExecutor(launch_kernel->groupId())
       ->run(
-          args,
-          outputs,
+          kah_args,
+          kah_outputs,
           launch_kernel->launchParams(),
           launch_kernel->compileParams());
 }
+
 
 void HostIrEvaluator::handle(PostOnStream* post_ir) {
   KernelArgumentHolder input_args;

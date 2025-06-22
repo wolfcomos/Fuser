@@ -19,6 +19,17 @@ class HostIrJit {
   at::Tensor allocate(
       const kir::Allocate* allocate,
       const std::vector<int64_t>& input_sizes);
+  
+  struct LaunchKernelResult {
+    KernelArgumentHolder args;
+    KernelArgumentHolder outputs;
+  };
+
+  LaunchKernelResult launchKernel(
+      const hir::LaunchKernel* launch_kernel,
+      int64_t cache_id,
+      const std::vector<at::Tensor>& inputs,
+      const std::vector<at::Tensor>& outputs);
 
   HostIrJit(hir::HostIrContainer* container = nullptr, int num_threads = 4);
   ~HostIrJit();
