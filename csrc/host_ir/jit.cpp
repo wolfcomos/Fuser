@@ -361,7 +361,7 @@ void compile(const hir::HostIrContainer* container, llvm::orc::LLJIT* jit, std::
           std::to_string(reinterpret_cast<uintptr_t>(allocate));
     }
     else if (auto launch_kernel = dynamic_cast<const hir::LaunchKernel*>(expr)) {
-      std::cout << "Generating launch kernel function" << std::endl;
+      // std::cout << "Generating launch kernel function" << std::endl;
       generateLaunchKernelFunc(launch_kernel, mod.get());
       // Store the mapping from launch_kernel to function name
       launch_kernel_func_names[launch_kernel] = "launch_kernel_" +
