@@ -387,7 +387,7 @@ void HostIrEvaluator::handle(Synchronize* synchronize) {
 void HostIrEvaluator::handle(LaunchKernel* launch_kernel) {
 
   PolymorphicValue cache_id_poly = expr_evaluator_.evaluate(launch_kernel->cacheId());
-  int64_t cache_id = 0;
+  int64_t cache_id = -1;
   if (!cache_id_poly.is<std::monostate>()) {
     cache_id = static_cast<int64_t>(cache_id_poly.as<int64_t>());
   }

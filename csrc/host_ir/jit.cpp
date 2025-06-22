@@ -384,7 +384,7 @@ void compile(const hir::HostIrContainer* container, llvm::orc::LLJIT* jit, std::
   for (const auto& [launch_kernel, func_name] : launch_kernel_func_names) {
     auto func_addr = ExitOnErr(jit->lookup(func_name));
     // Lookup and reinterpret the function pointer to store in the map
-    launch_kernel_funcs_[launch_kernel] = launch_kernel_fn(reinterpret_cast<KernelArgumentHolderPair(*)(int64_t, at::Tensor**, at::Tensor**)> (func_addr.getValue()));
+    launch_kernel_funcs_[launch_kernel] = launch_kernel_fn(reinterpret_cast<KernelArgumentHolderPair(*)(int64_t, at::Tensor**, at::Tensor**)>(func_addr.getValue()));
   }
 }
 
@@ -450,14 +450,14 @@ HostIrJit::HostIrJit(hir::HostIrContainer* container, int num_threads) : pimpl_(
 
   void* kernel_argument_holder_push_func_ptr = reinterpret_cast<void*>(
       +[](KernelArgumentHolder* self, at::Tensor* tensor_ptr) {
-        std::cout << "Wrapper function called with tensor_ptr: " << tensor_ptr << std::endl;
+        // std::cout << "Wrapper function called with tensor_ptr: " << tensor_ptr << std::endl;
         if (tensor_ptr == nullptr) {
-          std::cout << "ERROR: tensor_ptr is null!" << std::endl;
+          // std::cout << "ERROR: tensor_ptr is null!" << std::endl;
           return;
         }
-        std::cout << "About to call self->push(*tensor_ptr)" << std::endl;
+        // std::cout << "About to call self->push(*tensor_ptr)" << std::endl;
         self->push(*tensor_ptr);
-        std::cout << "Successfully called push" << std::endl;
+        // std::cout << "Successfully called push" << std::endl;
       });
 
   auto kernel_argument_holder_constructor_addr = llvm::orc::ExecutorAddr::fromPtr(kernel_argument_holder_constructor_func_ptr);
@@ -506,23 +506,29 @@ HostIrJit::LaunchKernelResult HostIrJit::launchKernel(
   
   auto func_ptr = pimpl_->launch_kernel_funcs_[launch_kernel];
   
-  std::cout << "Calling LLVM function with:" << std::endl;
-  std::cout << "  cache_id: " << cache_id << std::endl;
-  std::cout << "  inputs.size(): " << inputs.size() << std::endl;
-  std::cout << "  outputs.size(): " << outputs.size() << std::endl;
+  // std::cout << "Calling LLVM function with:" << std::endl;
+  // std::cout << "  cache_id: " << cache_id << std::endl;
+  // std::cout << "  inputs.size(): " << inputs.size() << std::endl;
+  // std::cout << "  outputs.size(): " << outputs.size() << std::endl;
   
-  // Create vectors of pointers to tensors
+  // Convert const std::vector<at::Tensor>& to at::Tensor** arrays
   std::vector<at::Tensor*> input_ptrs;
-  for (auto& input : inputs) {
-    input_ptrs.push_back(&input);
+  input_ptrs.reserve(inputs.size());
+  for (const auto& tensor : inputs) {
+    input_ptrs.push_back(const_cast<at::Tensor*>(&tensor));
   }
   
   std::vector<at::Tensor*> output_ptrs;
-  for (auto& output : outputs) {
-    output_ptrs.push_back(&output);
+  output_ptrs.reserve(outputs.size());
+  for (const auto& tensor : outputs) {
+    output_ptrs.push_back(const_cast<at::Tensor*>(&tensor));
   }
   
-  KernelArgumentHolderPair result = func_ptr(cache_id, input_ptrs.data(), output_ptrs.data());
+  // Get raw pointer arrays
+  at::Tensor** input_array = input_ptrs.data();
+  at::Tensor** output_array = output_ptrs.data();
+  
+  KernelArgumentHolderPair result = func_ptr(cache_id, input_array, output_array);
   
   KernelArgumentHolder args = *reinterpret_cast<KernelArgumentHolder*>(result.args);
   KernelArgumentHolder outputs_holder = *reinterpret_cast<KernelArgumentHolder*>(result.outputs);
