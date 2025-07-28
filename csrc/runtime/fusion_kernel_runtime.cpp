@@ -298,7 +298,7 @@ KernelArgumentHolder FusionKernelRuntime::runWithInputs(
       debug() << "=================RUNNING HOSTIR EVALUATOR================="
               << std::endl;
     }
-
+    
     auto outputs = hie_->runWithInputs(args);
     if (isDebugDumpEnabled(DebugDumpOption::PerfDebugVerbose)) {
       debug() << "============= FINISHED RUNNING HOSTIR EVALUATOR ============"
@@ -561,8 +561,12 @@ void FusionKernelRuntime::compileFusionParallel(KernelArgumentHolder args) {
 
     hir_pass::InsertDeallocations().runPass(hic.get());
 
+    #ifdef NVFUSER_HOST_IR_JIT
+    hie_ = std::make_unique<HostIrJit>(std::move(hic));
+    #else
     hie_ = std::make_unique<hir::HostIrEvaluator>(
         std::move(hic), &Communicator::getInstance());
+    #endif
   }
 
   if (isProfilerEnabled()) {

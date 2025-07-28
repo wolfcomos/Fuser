@@ -11,14 +11,13 @@
 #include <expr_evaluator.h>
 #include <host_ir/container.h>
 #include <host_ir/host_ir.h>
+#include <c10/cuda/CUDAStream.h>
 #include <multidevice/communicator.h>
 #include <multidevice/ipc_handle.h>
 #include <runtime/executor.h>
 #include <runtime/executor_abstract.h>
 #include <runtime/executor_params.h>
 #include <runtime/fusion_executor_cache.h>
-
-#include <c10/cuda/CUDAStream.h>
 
 namespace nvfuser {
 

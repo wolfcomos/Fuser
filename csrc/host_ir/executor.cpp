@@ -224,7 +224,11 @@ KernelArgumentHolder HostIrEvaluator::runWithInputs(
   expr_evaluator_.bind("cacheId", static_cast<int64_t>(*args.getCacheId()));
 
   NVF_ERROR_EQ(std::ssize(container_->inputs()), args.size());
+  std::unordered_map<Val*, PolymorphicValue> val_to_PValue;
   for (auto&& [in_val, arg] : zip(container_->inputs(), args)) {
+    if (arg.is<at::Tensor>()) {
+      val_to_PValue[in_val] = arg.as<at::Tensor>();
+    }
     expr_evaluator_.bind(in_val, arg);
   }
 
@@ -347,6 +351,7 @@ void HostIrEvaluator::handle(Synchronize* synchronize) {
       cudaStreamWaitEvent(current_stream, event, cudaEventWaitDefault));
   NVFUSER_CUDA_RT_SAFE_CALL(cudaEventDestroy(event));
 }
+
 
 void HostIrEvaluator::handle(LaunchKernel* launch_kernel) {
   KernelArgumentHolder args;
@@ -721,6 +726,7 @@ void HostIrEvaluator::handle(LoadStoreOp* load_store_op) {
     expr_evaluator_.bind(out_tv, t);
   }
 }
+
 
 void HostIrEvaluator::handle(kir::Allocate* allocate) {
   NVF_ERROR(
